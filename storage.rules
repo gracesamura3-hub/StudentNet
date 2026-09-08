@@ -1,0 +1,19 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() { return request.auth != null; }
+    function owner(userId) { return signedIn() && request.auth.uid == userId; }
+    match /profiles/{userId}/{fileName} {
+      allow read: if signedIn();
+      allow write: if owner(userId) && request.resource.size < 8 * 1024 * 1024;
+    }
+    match /documents/{userId}/{fileName} {
+      allow read, write: if owner(userId) && request.resource.size < 12 * 1024 * 1024;
+    }
+    match /videos/{userId}/{fileName} {
+      allow read: if signedIn();
+      // Clients upload only to processing; a Cloud Function publishes transcoded output.
+      allow write: if owner(userId) && request.resource.size < 120 * 1024 * 1024;
+    }
+  }
+}

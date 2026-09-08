@@ -1,0 +1,7 @@
+{
+  "indexes": [
+    { "collectionGroup": "posts", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "visibleTo", "arrayConfig": "CONTAINS" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "opportunities", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "publishedAt", "order": "DESCENDING" }] }
+  ],
+  "fieldOverrides": []
+}

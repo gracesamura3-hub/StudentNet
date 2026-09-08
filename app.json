@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "StudentNet",
+    "slug": "studentnet",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#F7F8F3"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "za.ac.richfield.studentnet"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0D3B2E"
+      },
+      "package": "za.ac.richfield.studentnet"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-notifications",
+      "expo-font"
+    ]
+  }
+}
