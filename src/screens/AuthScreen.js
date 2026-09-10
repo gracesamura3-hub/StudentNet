@@ -15,7 +15,7 @@ const roles = [
 ];
 
 export default function AuthScreen() {
-  const { signIn, register, enterDemo, configured } = useAuth();
+  const { signIn, register, enterDemo, authMode, authError } = useAuth();
   const [mode, setMode] = useState('welcome');
   const [role, setRole] = useState('student');
   const [form, setForm] = useState({ firstName: '', lastName: '', email: '', password: '', verificationReference: '' });
@@ -31,6 +31,7 @@ export default function AuthScreen() {
       else {
         const result = await register({ ...form, role });
         if (result.status === 'pending') setError('Account created. Check your email or wait for identity verification before signing in.');
+        else setError('Account created successfully. Sign in with your new details.');
         setMode('login');
       }
     } catch (submissionError) {
@@ -92,7 +93,7 @@ export default function AuthScreen() {
             <View style={styles.smallBrand}><Ionicons name="people" size={18} color={colors.white} /></View>
           </View>
           <Text style={styles.formTitle}>{isRegister ? 'Start your story.' : 'Welcome back.'}</Text>
-          <Text style={styles.formSubtitle}>{isRegister ? 'Create a verified profile for the Richfield community.' : 'Sign in to continue building your future.'}</Text>
+          <Text style={styles.formSubtitle}>{isRegister ? 'Create a verified profile for the Richfield community.' : 'Students, alumni, employers and provisioned staff can sign in here.'}</Text>
 
           {isRegister ? (
             <>
@@ -111,7 +112,8 @@ export default function AuthScreen() {
               </View>
             </>
           ) : null}
-          <Field label="Email address" value={form.email} onChangeText={value => setField('email', value)} keyboardType="email-address" autoCapitalize="none" icon="mail-outline" placeholder={role === 'student' ? 'name@my.richfield.ac.za' : 'you@example.com'} />
+          {!isRegister ? <View style={styles.staffNote}><View style={styles.staffIcon}><Ionicons name="shield-checkmark-outline" size={18} color={colors.green} /></View><View style={{ flex: 1 }}><Text style={styles.staffTitle}>Administrator sign-in</Text><Text style={styles.staffCopy}>Provisioned Richfield staff use this same secure form. Administrator accounts cannot be created publicly.</Text></View></View> : null}
+          <Field label="Email address" value={form.email} onChangeText={value => setField('email', value)} keyboardType="email-address" autoCapitalize="none" icon="mail-outline" placeholder={isRegister && role === 'student' ? 'name@my.richfield.ac.za' : 'you@example.com'} />
           <Field label="Password" value={form.password} onChangeText={value => setField('password', value)} secureTextEntry icon="lock-closed-outline" placeholder="At least 8 characters" />
           {isRegister && role !== 'student' ? (
             <Field
@@ -122,10 +124,12 @@ export default function AuthScreen() {
               placeholder="Used only for verification"
             />
           ) : null}
-          {!configured ? <View style={styles.configNote}><Ionicons name="information-circle" size={18} color={colors.blue} /><Text style={styles.configText}>Authentication activates when Firebase values are added to .env. The interactive preview is available now.</Text></View> : null}
+          {authMode === 'local' ? <View style={styles.configNote}><Ionicons name="checkmark-circle" size={18} color={colors.blue} /><Text style={styles.configText}>Device-only development authentication is active for preview testing. Add Firebase values to use shared production accounts.</Text></View> : null}
+          {authMode === 'unavailable' ? <View style={styles.errorBox}><Text style={styles.errorText}>Authentication is not configured. Add Firebase values, or explicitly enable local authentication in a development build.</Text></View> : null}
+          {authError ? <View style={styles.errorBox}><Text style={styles.errorText}>{authError}</Text></View> : null}
           {error ? <View style={[styles.errorBox, error.startsWith('Account created') && styles.successBox]}><Text style={styles.errorText}>{error}</Text></View> : null}
-          <PrimaryButton onPress={submit} disabled={busy || !configured} icon={busy ? undefined : 'arrow-forward'}>
-            {busy ? <ActivityIndicator color={colors.white} /> : (isRegister ? 'Create verified account' : 'Sign in securely')}
+          <PrimaryButton onPress={submit} disabled={busy || authMode === 'unavailable'} icon={busy ? undefined : 'arrow-forward'}>
+            {busy ? <ActivityIndicator color={colors.white} /> : (isRegister ? 'Create account' : 'Sign in securely')}
           </PrimaryButton>
           <View style={styles.switchRow}>
             <Text style={styles.switchCopy}>{isRegister ? 'Already part of StudentNet?' : 'New to the community?'}</Text>
@@ -139,6 +143,7 @@ export default function AuthScreen() {
               {roles.map(item => <Pressable key={item.id} onPress={() => enterDemo(item.id)} style={styles.previewRole}><Ionicons name={item.icon} size={18} color={colors.green} /><Text style={styles.previewRoleText}>{item.label}</Text></Pressable>)}
             </View>
           </View>
+          <Text style={styles.authMode}>Authentication: {authMode === 'firebase' ? 'Firebase Auth' : authMode === 'local' ? 'device-only development mode' : 'configuration required'}</Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -213,6 +218,10 @@ const styles = StyleSheet.create({
   input: { flex: 1, height: '100%', color: colors.ink, fontSize: 14 },
   configNote: { flexDirection: 'row', gap: 9, backgroundColor: colors.bluePale, borderRadius: 14, padding: 13, marginTop: 18 },
   configText: { flex: 1, color: '#415184', fontSize: 11, lineHeight: 16 },
+  staffNote: { flexDirection: 'row', gap: 10, backgroundColor: colors.mint, borderRadius: 16, padding: 13, marginBottom: 3 },
+  staffIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
+  staffTitle: { color: colors.ink, fontSize: 11, fontWeight: '900' },
+  staffCopy: { color: colors.muted, fontSize: 9, lineHeight: 14, marginTop: 3 },
   errorBox: { backgroundColor: colors.coralPale, borderRadius: 13, padding: 12, marginTop: 14 },
   successBox: { backgroundColor: colors.mint },
   errorText: { color: colors.ink, fontSize: 12, lineHeight: 17 },
@@ -225,4 +234,5 @@ const styles = StyleSheet.create({
   previewRoles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 13 },
   previewRole: { width: '48%', flexDirection: 'row', gap: 7, padding: 10, backgroundColor: colors.cream, borderRadius: 12, alignItems: 'center' },
   previewRoleText: { color: colors.ink, fontSize: 11, fontWeight: '800' },
+  authMode: { color: colors.subtle, fontSize: 9, textAlign: 'center', marginTop: 13 },
 });

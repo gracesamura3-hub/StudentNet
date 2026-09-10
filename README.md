@@ -28,7 +28,9 @@ cp .env.example .env
 npm start
 ```
 
-Press `a` for Android, `i` for iOS on macOS, or `w` for the browser preview. The app can be explored immediately through **Explore the interactive preview**. Real sign-in is enabled after the Firebase variables below are configured.
+Press `a` for Android, `i` for iOS on macOS, or `w` for the browser preview. The app can always be explored through **Explore the interactive preview**. Adding Firebase variables activates shared Firebase Authentication and Firestore accounts.
+
+For explicit device-only authentication during local development, run `npm run preview`. This sets `EXPO_PUBLIC_ENABLE_LOCAL_AUTH=true` for that development process only. Local passwords use a versioned PBKDF2-SHA256 record, but the accounts are intentionally device-only and must never be treated as production identities. Production builds ignore this flag.
 
 Useful checks:
 
@@ -61,6 +63,19 @@ For a production build, remove or feature-flag the preview entry points in `src/
 - **Administrators:** provisioned out of band by authorised Firebase administrators with an `admin: true` custom claim and an active `admin` profile document. There is no client registration route.
 
 Firestore rules are the source of truth for authorisation. UI variations improve usability but never grant data access.
+
+### Provision an administrator
+
+Administrator signup is deliberately not exposed in the mobile app. With Application Default Credentials or `GOOGLE_APPLICATION_CREDENTIALS` configured for an authorised Firebase service account, run:
+
+```bash
+read -rsp 'Temporary administrator password: ' ADMIN_PASSWORD
+export ADMIN_PASSWORD
+FIREBASE_PROJECT_ID=your-project-id ADMIN_EMAIL=staff@richfield.ac.za npm run admin:provision
+unset ADMIN_PASSWORD
+```
+
+For an existing Firebase Authentication user, `ADMIN_PASSWORD` is unnecessary. The command sets the protected `admin` custom claim and creates or repairs the corresponding active administrator profile. The user may then sign in through the normal staff sign-in form.
 
 ## Data model
 
