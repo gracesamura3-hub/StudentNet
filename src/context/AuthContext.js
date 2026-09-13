@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import { doc, onSnapshot } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db, isFirebaseConfigured } from '../firebase/config';
-import { getAuthErrorMessage, registerUser, resetPassword, signInUser, signOutUser } from '../firebase/authService';
+import { getAuthErrorMessage, normalizeUserProfile, registerUser, resetPassword, signInUser, signOutUser } from '../firebase/authService';
 import { demoUsers } from '../data/demoData';
 import { registerPushToken } from '../firebase/notificationService';
 
@@ -36,7 +36,7 @@ export function AuthProvider({ children }) {
       setProfile(null);
       setFirebaseSessionReady(false);
       stopProfile = onSnapshot(doc(db, 'users', user.uid), snap => {
-        const nextProfile = snap.exists() ? { id: snap.id, ...snap.data() } : null;
+        const nextProfile = snap.exists() ? normalizeUserProfile(snap.id, snap.data()) : null;
         setProfile(nextProfile);
         if (nextProfile?.status === 'active' && !firebaseSignInInProgress.current) {
           setFirebaseSessionReady(true);

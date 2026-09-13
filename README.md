@@ -67,14 +67,14 @@ A Richfield mailbox is not automatically a StudentNet account. A working student
 2. A matching `users/{firebaseUid}` Firestore document created by StudentNet registration.
 3. A verified address ending in `@my.richfield.ac.za`, `@richfield.ac.za`, `@my.aaa.ac.za`, or `@aaa.ac.za`.
 
-Use **Create your profile** in the app to create both the Authentication user and Firestore profile, then open the verification email before signing in. Do not create a student only in the Firebase Authentication console: it will have no StudentNet profile and sign-in will be rejected. Provision staff administrators with the script below; alumni and business profiles remain pending until an administrator approves them.
+Use **Create your profile** in the app to create both the Authentication user and Firestore profile, then open the verification email before signing in. If an institutional user was already created in the Firebase Authentication console, StudentNet creates their missing pending student profile and sends a verification email on their next sign-in. Provision staff administrators with the script below; alumni and business profiles remain pending until an administrator approves them.
 
 The sign-in screen now includes **Forgot password?** for Firebase accounts. If sign-in still fails:
 
 - **Authentication: configuration required** means `.env` is absent or is missing a required value.
 - **Email or password is incorrect** means the account is not in this Firebase project or the password does not match; use password reset.
 - **Verify your institutional email** means the Firebase email verification link has not been completed.
-- **Account profile is missing** means the Auth user has no matching `users/{uid}` document; register through StudentNet or have an administrator repair the profile.
+- **Account profile is missing** for a non-institutional address means StudentNet cannot safely infer its alumni, business, or staff role; use app registration or have an administrator repair the profile.
 - **Firebase denied access** means the repository Firestore rules were not deployed to the same project configured in `.env`.
 
 For a no-cloud development account, run `npm run preview`, choose **Create your profile**, and then sign in on that same browser/device. These local accounts do not exist in Firebase and do not carry across browsers or devices.

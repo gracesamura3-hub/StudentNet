@@ -11,6 +11,32 @@ import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { auth, db } from './config';
 
 const STUDENT_DOMAINS = ['my.richfield.ac.za', 'richfield.ac.za', 'my.aaa.ac.za', 'aaa.ac.za'];
+const PROFILE_DEFAULTS = {
+  student: {
+    headline: 'Richfield student',
+    programme: 'Complete your programme',
+    campus: 'Richfield community',
+    year: 'Student',
+  },
+  alumni: {
+    headline: 'Richfield alumni professional',
+    programme: 'Complete your qualification',
+    campus: 'Richfield community',
+    year: 'Alumni',
+  },
+  business: {
+    headline: 'Verified employer',
+    programme: 'Graduate talent partner',
+    campus: 'South Africa',
+    year: 'Employer',
+  },
+  admin: {
+    headline: 'Richfield Community Administrator',
+    programme: 'Richfield Student Success',
+    campus: 'National Office',
+    year: 'Staff account',
+  },
+};
 
 function assertFirebase() {
   if (!auth || !db) throw new Error('Firebase is not configured. Add the EXPO_PUBLIC_FIREBASE_* values to .env.');
@@ -19,6 +45,53 @@ function assertFirebase() {
 export function isInstitutionalEmail(email) {
   const domain = email.trim().toLowerCase().split('@')[1];
   return STUDENT_DOMAINS.includes(domain);
+}
+
+export function normalizeUserProfile(id, profile = {}) {
+  const role = profile.role || 'student';
+  const emailName = profile.email?.split('@')[0]?.replace(/[._-]+/g, ' ') || '';
+  const suppliedName = profile.name || `${profile.firstName || ''} ${profile.lastName || ''}`.trim() || emailName;
+  const nameParts = suppliedName.split(/\s+/).filter(Boolean);
+  const firstName = profile.firstName || nameParts[0] || 'Richfield';
+  const lastName = profile.lastName || nameParts.slice(1).join(' ') || 'User';
+  const name = profile.name || `${firstName} ${lastName}`;
+  const defaults = PROFILE_DEFAULTS[role] || PROFILE_DEFAULTS.student;
+
+  return {
+    email: profile.email || '',
+    ...defaults,
+    completion: 20,
+    ...profile,
+    id,
+    firstName,
+    lastName,
+    name,
+    initials: profile.initials || `${firstName[0] || ''}${lastName[0] || ''}`.toUpperCase(),
+    role,
+    skills: Array.isArray(profile.skills) ? profile.skills : [],
+    connectionIds: Array.isArray(profile.connectionIds) ? profile.connectionIds : [],
+  };
+}
+
+async function createInstitutionalStudentProfile(user) {
+  if (!user.email || !isInstitutionalEmail(user.email)) {
+    throw new Error('Your account profile is missing. Use Create your profile so StudentNet can verify your role.');
+  }
+  const profile = normalizeUserProfile(user.uid, {
+    email: user.email,
+    name: user.displayName || undefined,
+    role: 'student',
+    status: 'pending',
+    verified: false,
+    verificationReference: null,
+    visibility: { public: ['name', 'headline', 'skills'], business: ['name', 'headline', 'skills', 'portfolio'] },
+  });
+  await setDoc(doc(db, 'users', user.uid), {
+    ...profile,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return profile;
 }
 
 export function getAuthErrorMessage(error) {
@@ -46,23 +119,30 @@ export async function signInUser(email, password) {
   const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
   try {
     const profile = await getDoc(doc(db, 'users', credential.user.uid));
-    if (!profile.exists()) {
-      throw new Error('Your account profile is missing. Contact StudentNet support.');
-    }
-    if (profile.data().status === 'suspended') {
+    const createdProfile = !profile.exists();
+    const profileData = createdProfile
+      ? await createInstitutionalStudentProfile(credential.user)
+      : profile.data();
+    if (profileData.status === 'suspended') {
       throw new Error('This account is suspended. Contact StudentNet support.');
     }
-    if (profile.data().role === 'student' && profile.data().status === 'pending') {
+    if (profileData.role === 'student' && profileData.status === 'pending') {
       await reload(credential.user);
       if (!credential.user.emailVerified) {
-        throw new Error('Verify your institutional email address before signing in.');
+        if (createdProfile) await sendEmailVerification(credential.user);
+        throw new Error(createdProfile
+          ? 'StudentNet created your profile and sent a verification email. Open that link, then sign in again.'
+          : 'Verify your institutional email address before signing in.');
       }
       await credential.user.getIdToken(true);
       await setDoc(doc(db, 'users', credential.user.uid), { status: 'active', verified: true, updatedAt: serverTimestamp() }, { merge: true });
       return credential.user;
     }
-    if (['alumni', 'business'].includes(profile.data().role) && profile.data().status !== 'active') {
+    if (['alumni', 'business'].includes(profileData.role) && profileData.status !== 'active') {
       throw new Error('Your verification is still pending. We will notify you when access is approved.');
+    }
+    if (profileData.status !== 'active') {
+      throw new Error('Your account is not active yet. Contact StudentNet support.');
     }
     return credential.user;
   } catch (error) {
@@ -88,8 +168,7 @@ export async function registerUser({ email, password, firstName, lastName, role,
   const name = `${firstName.trim()} ${lastName.trim()}`;
   await updateProfile(credential.user, { displayName: name });
   const status = 'pending';
-  await setDoc(doc(db, 'users', credential.user.uid), {
-    id: credential.user.uid,
+  await setDoc(doc(db, 'users', credential.user.uid), normalizeUserProfile(credential.user.uid, {
     email: email.trim().toLowerCase(),
     firstName: firstName.trim(),
     lastName: lastName.trim(),
@@ -103,7 +182,7 @@ export async function registerUser({ email, password, firstName, lastName, role,
     completion: 20,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-  });
+  }));
   if (role === 'student') await sendEmailVerification(credential.user);
   await signOut(auth);
   return { status };
