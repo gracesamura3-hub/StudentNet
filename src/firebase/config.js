@@ -14,7 +14,10 @@ const firebaseConfig = {
   appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
 
-export const isFirebaseConfigured = Object.values(firebaseConfig).every(Boolean);
+const requiredAuthFields = ['apiKey', 'authDomain', 'projectId', 'appId'];
+
+export const missingFirebaseConfig = requiredAuthFields.filter(field => !firebaseConfig[field]);
+export const isFirebaseConfigured = missingFirebaseConfig.length === 0;
 
 const hadApp = getApps().length > 0;
 const app = isFirebaseConfigured ? (hadApp ? getApp() : initializeApp(firebaseConfig)) : null;
@@ -25,4 +28,4 @@ export const auth = app
       : initializeAuth(app, { persistence: getReactNativePersistence(AsyncStorage) }))
   : null;
 export const db = app ? getFirestore(app) : null;
-export const storage = app ? getStorage(app) : null;
+export const storage = app && firebaseConfig.storageBucket ? getStorage(app) : null;

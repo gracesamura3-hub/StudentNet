@@ -21,6 +21,26 @@ export function isInstitutionalEmail(email) {
   return STUDENT_DOMAINS.includes(domain);
 }
 
+export function getAuthErrorMessage(error) {
+  const messages = {
+    'auth/email-already-in-use': 'An account already exists for this email address. Sign in or reset your password.',
+    'auth/invalid-credential': 'Email or password is incorrect.',
+    'auth/invalid-email': 'Enter a valid email address.',
+    'auth/missing-password': 'Enter your password.',
+    'auth/network-request-failed': 'Unable to reach Firebase. Check your connection and try again.',
+    'auth/operation-not-allowed': 'Email/password sign-in is not enabled for this Firebase project.',
+    'auth/too-many-requests': 'Too many attempts. Wait a few minutes or reset your password.',
+    'auth/unauthorized-domain': 'This web address is not authorised in Firebase Authentication settings.',
+    'auth/user-disabled': 'This account has been disabled. Contact StudentNet support.',
+    'auth/user-not-found': 'Email or password is incorrect.',
+    'auth/weak-password': 'Use a stronger password with at least 8 characters.',
+    'permission-denied': 'Firebase denied access. Deploy the repository Firestore rules to this project.',
+  };
+  if (messages[error?.code]) return messages[error.code];
+  if (error?.message && !error.message.startsWith('Firebase:')) return error.message;
+  return 'Authentication failed. Check the Firebase setup and try again.';
+}
+
 export async function signInUser(email, password) {
   assertFirebase();
   const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
@@ -90,6 +110,7 @@ export async function registerUser({ email, password, firstName, lastName, role,
 
 export async function resetPassword(email) {
   assertFirebase();
+  if (!email.trim()) throw new Error('Enter your email address first.');
   return sendPasswordResetEmail(auth, email.trim());
 }
 

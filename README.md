@@ -42,16 +42,42 @@ npx expo export --platform web
 
 ## Firebase setup
 
-1. Create a Firebase project and register a web application.
-2. Enable Email/Password in Firebase Authentication.
-3. Create a Cloud Firestore database and a Firebase Storage bucket.
-4. Copy the web configuration values into `.env` using `.env.example` as the template.
-5. Install the Firebase CLI, select the project, and deploy the security configuration:
+1. Create a Firebase project and register a **Web** application. In **Project settings > Your apps > SDK setup and configuration**, select **Config** and copy its values; do not use a service-account JSON file in the Expo app.
+2. In **Authentication > Sign-in method**, enable **Email/Password**. Add the deployed web hostname to **Authentication > Settings > Authorized domains** when testing outside localhost.
+3. Create a Cloud Firestore database in Native mode. Create a Firebase Storage bucket when portfolio uploads are needed.
+4. Copy `.env.example` to `.env` and fill each variable with the matching web config value. Authentication needs `apiKey`, `authDomain`, `projectId`, and `appId`; Storage and Messaging values do not block sign-in.
+5. Install the Firebase CLI, select the same project ID, and deploy the repository security configuration:
 
 ```bash
 firebase use your-project-id
 firebase deploy --only firestore:rules,firestore:indexes,storage
 ```
+
+Restart Expo after changing `.env` so the `EXPO_PUBLIC_` values are rebuilt into the client:
+
+```bash
+npx expo start --clear
+```
+
+### Richfield sign-in checklist
+
+A Richfield mailbox is not automatically a StudentNet account. A working student account has all three of the following:
+
+1. An Email/Password user in **Firebase Authentication > Users**.
+2. A matching `users/{firebaseUid}` Firestore document created by StudentNet registration.
+3. A verified address ending in `@my.richfield.ac.za`, `@richfield.ac.za`, `@my.aaa.ac.za`, or `@aaa.ac.za`.
+
+Use **Create your profile** in the app to create both the Authentication user and Firestore profile, then open the verification email before signing in. Do not create a student only in the Firebase Authentication console: it will have no StudentNet profile and sign-in will be rejected. Provision staff administrators with the script below; alumni and business profiles remain pending until an administrator approves them.
+
+The sign-in screen now includes **Forgot password?** for Firebase accounts. If sign-in still fails:
+
+- **Authentication: configuration required** means `.env` is absent or is missing a required value.
+- **Email or password is incorrect** means the account is not in this Firebase project or the password does not match; use password reset.
+- **Verify your institutional email** means the Firebase email verification link has not been completed.
+- **Account profile is missing** means the Auth user has no matching `users/{uid}` document; register through StudentNet or have an administrator repair the profile.
+- **Firebase denied access** means the repository Firestore rules were not deployed to the same project configured in `.env`.
+
+For a no-cloud development account, run `npm run preview`, choose **Create your profile**, and then sign in on that same browser/device. These local accounts do not exist in Firebase and do not carry across browsers or devices.
 
 For a production build, remove or feature-flag the preview entry points in `src/screens/AuthScreen.js`. Do not place Firebase service-account credentials or AI-provider secrets in Expo environment variables; those belong in Cloud Functions/Secret Manager.
 
