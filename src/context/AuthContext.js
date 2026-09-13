@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import { doc, onSnapshot } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db, isFirebaseConfigured } from '../firebase/config';
-import { registerUser, signInUser, signOutUser } from '../firebase/authService';
+import { registerUser, resetPassword, signInUser, signOutUser } from '../firebase/authService';
 import { demoUsers } from '../data/demoData';
 import { registerPushToken } from '../firebase/notificationService';
 
@@ -92,6 +92,11 @@ export function AuthProvider({ children }) {
         return result;
       }
       throw new Error('Authentication is not configured. Add Firebase values or explicitly enable local authentication for development.');
+    },
+    requestPasswordReset: async email => {
+      if (isFirebaseConfigured) return resetPassword(email);
+      if (isLocalAuthEnabled) throw new Error('Password recovery is only available for Firebase accounts. Create a new device-only preview account instead.');
+      throw new Error('Authentication is not configured. Add the Firebase values before requesting a password reset.');
     },
     signOut: async () => {
       const operation = ++localAuthOperation.current;

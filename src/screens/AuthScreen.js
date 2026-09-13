@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
+import { getAuthErrorMessage } from '../firebase/authService';
 import { colors } from '../theme';
 import { PrimaryButton } from '../components/ui';
 
@@ -15,7 +16,7 @@ const roles = [
 ];
 
 export default function AuthScreen() {
-  const { signIn, register, enterDemo, authMode, authError } = useAuth();
+  const { signIn, register, requestPasswordReset, enterDemo, authMode, authError } = useAuth();
   const [mode, setMode] = useState('welcome');
   const [role, setRole] = useState('student');
   const [form, setForm] = useState({ firstName: '', lastName: '', email: '', password: '', verificationReference: '' });
@@ -35,7 +36,20 @@ export default function AuthScreen() {
         setMode('login');
       }
     } catch (submissionError) {
-      setError(submissionError.message.replace('Firebase: ', '').replace(/\s*\(auth\/.*\)\.?$/, ''));
+      setError(getAuthErrorMessage(submissionError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function forgotPassword() {
+    setError('');
+    setBusy(true);
+    try {
+      await requestPasswordReset(form.email);
+      setError('Password reset email sent. Check your inbox and spam folder.');
+    } catch (submissionError) {
+      setError(getAuthErrorMessage(submissionError));
     } finally {
       setBusy(false);
     }
@@ -115,6 +129,7 @@ export default function AuthScreen() {
           {!isRegister ? <View style={styles.staffNote}><View style={styles.staffIcon}><Ionicons name="shield-checkmark-outline" size={18} color={colors.green} /></View><View style={{ flex: 1 }}><Text style={styles.staffTitle}>Administrator sign-in</Text><Text style={styles.staffCopy}>Provisioned Richfield staff use this same secure form. Administrator accounts cannot be created publicly.</Text></View></View> : null}
           <Field label="Email address" value={form.email} onChangeText={value => setField('email', value)} keyboardType="email-address" autoCapitalize="none" icon="mail-outline" placeholder={isRegister && role === 'student' ? 'name@my.richfield.ac.za' : 'you@example.com'} />
           <Field label="Password" value={form.password} onChangeText={value => setField('password', value)} secureTextEntry icon="lock-closed-outline" placeholder="At least 8 characters" />
+          {!isRegister ? <Pressable disabled={busy} onPress={forgotPassword} style={styles.forgotPassword}><Text style={styles.forgotPasswordText}>Forgot password?</Text></Pressable> : null}
           {isRegister && role !== 'student' ? (
             <Field
               label={role === 'alumni' ? 'Student or graduation number' : 'Company website or registration number'}
@@ -127,7 +142,7 @@ export default function AuthScreen() {
           {authMode === 'local' ? <View style={styles.configNote}><Ionicons name="checkmark-circle" size={18} color={colors.blue} /><Text style={styles.configText}>Device-only development authentication is active for preview testing. Add Firebase values to use shared production accounts.</Text></View> : null}
           {authMode === 'unavailable' ? <View style={styles.errorBox}><Text style={styles.errorText}>Authentication is not configured. Add Firebase values, or explicitly enable local authentication in a development build.</Text></View> : null}
           {authError ? <View style={styles.errorBox}><Text style={styles.errorText}>{authError}</Text></View> : null}
-          {error ? <View style={[styles.errorBox, error.startsWith('Account created') && styles.successBox]}><Text style={styles.errorText}>{error}</Text></View> : null}
+          {error ? <View style={[styles.errorBox, (error.startsWith('Account created') || error.startsWith('Password reset')) && styles.successBox]}><Text style={styles.errorText}>{error}</Text></View> : null}
           <PrimaryButton onPress={submit} disabled={busy || authMode === 'unavailable'} icon={busy ? undefined : 'arrow-forward'}>
             {busy ? <ActivityIndicator color={colors.white} /> : (isRegister ? 'Create account' : 'Sign in securely')}
           </PrimaryButton>
@@ -216,6 +231,8 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: 'row', gap: 12 },
   inputWrap: { height: 53, borderWidth: 1, borderColor: colors.line, borderRadius: 16, backgroundColor: colors.white, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 10 },
   input: { flex: 1, height: '100%', color: colors.ink, fontSize: 14 },
+  forgotPassword: { alignSelf: 'flex-end', paddingVertical: 10 },
+  forgotPasswordText: { color: colors.green, fontSize: 11, fontWeight: '800' },
   configNote: { flexDirection: 'row', gap: 9, backgroundColor: colors.bluePale, borderRadius: 14, padding: 13, marginTop: 18 },
   configText: { flex: 1, color: '#415184', fontSize: 11, lineHeight: 16 },
   staffNote: { flexDirection: 'row', gap: 10, backgroundColor: colors.mint, borderRadius: 16, padding: 13, marginBottom: 3 },
