@@ -44,30 +44,31 @@ export function getAuthErrorMessage(error) {
 export async function signInUser(email, password) {
   assertFirebase();
   const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
-  const profile = await getDoc(doc(db, 'users', credential.user.uid));
-  if (!profile.exists()) {
-    await signOut(auth);
-    throw new Error('Your account profile is missing. Contact StudentNet support.');
-  }
-  if (profile.data().status === 'suspended') {
-    await signOut(auth);
-    throw new Error('This account is suspended. Contact StudentNet support.');
-  }
-  if (profile.data().role === 'student' && profile.data().status === 'pending') {
-    await reload(credential.user);
-    if (!credential.user.emailVerified) {
-      await signOut(auth);
-      throw new Error('Verify your institutional email address before signing in.');
+  try {
+    const profile = await getDoc(doc(db, 'users', credential.user.uid));
+    if (!profile.exists()) {
+      throw new Error('Your account profile is missing. Contact StudentNet support.');
     }
-    await credential.user.getIdToken(true);
-    await setDoc(doc(db, 'users', credential.user.uid), { status: 'active', verified: true, updatedAt: serverTimestamp() }, { merge: true });
+    if (profile.data().status === 'suspended') {
+      throw new Error('This account is suspended. Contact StudentNet support.');
+    }
+    if (profile.data().role === 'student' && profile.data().status === 'pending') {
+      await reload(credential.user);
+      if (!credential.user.emailVerified) {
+        throw new Error('Verify your institutional email address before signing in.');
+      }
+      await credential.user.getIdToken(true);
+      await setDoc(doc(db, 'users', credential.user.uid), { status: 'active', verified: true, updatedAt: serverTimestamp() }, { merge: true });
+      return credential.user;
+    }
+    if (['alumni', 'business'].includes(profile.data().role) && profile.data().status !== 'active') {
+      throw new Error('Your verification is still pending. We will notify you when access is approved.');
+    }
     return credential.user;
+  } catch (error) {
+    await signOut(auth).catch(() => {});
+    throw error;
   }
-  if (['alumni', 'business'].includes(profile.data().role) && profile.data().status !== 'active') {
-    await signOut(auth);
-    throw new Error('Your verification is still pending. We will notify you when access is approved.');
-  }
-  return credential.user;
 }
 
 export async function registerUser({ email, password, firstName, lastName, role, verificationReference }) {

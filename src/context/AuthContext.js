@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import { doc, onSnapshot } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db, isFirebaseConfigured } from '../firebase/config';
-import { registerUser, resetPassword, signInUser, signOutUser } from '../firebase/authService';
+import { getAuthErrorMessage, registerUser, resetPassword, signInUser, signOutUser } from '../firebase/authService';
 import { demoUsers } from '../data/demoData';
 import { registerPushToken } from '../firebase/notificationService';
 
@@ -13,10 +13,12 @@ const loadLocalAuth = () => import('../firebase/localAuthService');
 export function AuthProvider({ children }) {
   const [firebaseUser, setFirebaseUser] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [firebaseSessionReady, setFirebaseSessionReady] = useState(false);
   const [localProfile, setLocalProfile] = useState(null);
   const [demoRole, setDemoRole] = useState(null);
   const [loading, setLoading] = useState(isFirebaseConfigured || isLocalAuthEnabled);
   const [authError, setAuthError] = useState('');
+  const firebaseSignInInProgress = useRef(false);
   const localAuthOperation = useRef(0);
 
   useEffect(() => {
@@ -27,13 +29,27 @@ export function AuthProvider({ children }) {
       stopProfile?.();
       if (!user) {
         setProfile(null);
+        setFirebaseSessionReady(false);
         setLoading(false);
         return;
       }
+      setProfile(null);
+      setFirebaseSessionReady(false);
       stopProfile = onSnapshot(doc(db, 'users', user.uid), snap => {
-        setProfile(snap.exists() ? { id: snap.id, ...snap.data() } : null);
+        const nextProfile = snap.exists() ? { id: snap.id, ...snap.data() } : null;
+        setProfile(nextProfile);
+        if (nextProfile?.status === 'active' && !firebaseSignInInProgress.current) {
+          setFirebaseSessionReady(true);
+        }
+        setAuthError('');
         setLoading(false);
-      }, () => setLoading(false));
+      }, error => {
+        setProfile(null);
+        setFirebaseSessionReady(false);
+        setAuthError(getAuthErrorMessage(error));
+        setLoading(false);
+        signOutUser().catch(() => {});
+      });
     });
     return () => { stopProfile?.(); stopAuth(); };
   }, []);
@@ -58,7 +74,10 @@ export function AuthProvider({ children }) {
     }
   }, [demoRole, profile?.id, profile?.status]);
 
-  const user = demoRole ? demoUsers[demoRole] : localProfile || profile;
+  // Firebase emits auth/profile events before signInUser finishes its checks.
+  // Wait for both an active profile and a validated session before navigating.
+  const activeFirebaseProfile = profile?.status === 'active' ? profile : null;
+  const user = demoRole ? demoUsers[demoRole] : localProfile || (firebaseSessionReady ? activeFirebaseProfile : null);
   const value = useMemo(() => ({
     user,
     firebaseUser,
@@ -70,7 +89,17 @@ export function AuthProvider({ children }) {
     enterDemo: role => setDemoRole(role),
     changeDemoRole: role => setDemoRole(role),
     signIn: async (email, password) => {
-      if (isFirebaseConfigured) return signInUser(email, password);
+      if (isFirebaseConfigured) {
+        firebaseSignInInProgress.current = true;
+        setFirebaseSessionReady(false);
+        try {
+          const result = await signInUser(email, password);
+          setFirebaseSessionReady(true);
+          return result;
+        } finally {
+          firebaseSignInInProgress.current = false;
+        }
+      }
       if (isLocalAuthEnabled) {
         const operation = ++localAuthOperation.current;
         const { signInLocalUser } = await loadLocalAuth();
