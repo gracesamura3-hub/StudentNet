@@ -16,19 +16,21 @@ const roles = [
 ];
 
 export default function AuthScreen() {
-  const { signIn, register, requestPasswordReset, enterDemo, authMode, authError } = useAuth();
-  const [mode, setMode] = useState('welcome');
+  const { signIn, register, requestPasswordReset, enterDemo, authMode, authError, clearAuthError } = useAuth();
+  const [mode, setMode] = useState(authError ? 'login' : 'welcome');
   const [role, setRole] = useState('student');
   const [form, setForm] = useState({ firstName: '', lastName: '', email: '', password: '', verificationReference: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const effectiveMode = authError && mode === 'welcome' ? 'login' : mode;
   const setField = (key, value) => setForm(current => ({ ...current, [key]: value }));
 
   async function submit() {
+    if (effectiveMode === 'login' && mode === 'welcome') setMode('login');
     setError('');
     setBusy(true);
     try {
-      if (mode === 'login') await signIn(form.email, form.password);
+      if (effectiveMode === 'login') await signIn(form.email, form.password);
       else {
         const result = await register({ ...form, role });
         if (result.status === 'pending') setError('Account created. Check your email or wait for identity verification before signing in.');
@@ -43,6 +45,7 @@ export default function AuthScreen() {
   }
 
   async function forgotPassword() {
+    if (mode === 'welcome') setMode('login');
     setError('');
     setBusy(true);
     try {
@@ -55,7 +58,7 @@ export default function AuthScreen() {
     }
   }
 
-  if (mode === 'welcome') {
+  if (effectiveMode === 'welcome') {
     return (
       <View style={styles.welcomePage}>
         <LinearGradient colors={['#0B3328', '#164D3C', '#286D50']} style={StyleSheet.absoluteFill} />
@@ -97,13 +100,13 @@ export default function AuthScreen() {
     );
   }
 
-  const isRegister = mode === 'register';
+  const isRegister = effectiveMode === 'register';
   return (
     <SafeAreaView style={styles.formPage}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.formScroll} keyboardShouldPersistTaps="handled">
           <View style={styles.formTop}>
-            <Pressable onPress={() => { setMode('welcome'); setError(''); }} style={styles.back}><Ionicons name="arrow-back" size={22} color={colors.ink} /></Pressable>
+            <Pressable onPress={() => { setMode('welcome'); setError(''); clearAuthError(); }} style={styles.back}><Ionicons name="arrow-back" size={22} color={colors.ink} /></Pressable>
             <View style={styles.smallBrand}><Ionicons name="people" size={18} color={colors.white} /></View>
           </View>
           <Text style={styles.formTitle}>{isRegister ? 'Start your story.' : 'Welcome back.'}</Text>
@@ -141,14 +144,13 @@ export default function AuthScreen() {
           ) : null}
           {authMode === 'local' ? <View style={styles.configNote}><Ionicons name="checkmark-circle" size={18} color={colors.blue} /><Text style={styles.configText}>Device-only development authentication is active for preview testing. Add Firebase values to use shared production accounts.</Text></View> : null}
           {authMode === 'unavailable' ? <View style={styles.errorBox}><Text style={styles.errorText}>Authentication is not configured. Add Firebase values, or explicitly enable local authentication in a development build.</Text></View> : null}
-          {authError ? <View style={styles.errorBox}><Text style={styles.errorText}>{authError}</Text></View> : null}
-          {error ? <View style={[styles.errorBox, (error.startsWith('Account created') || error.startsWith('Password reset')) && styles.successBox]}><Text style={styles.errorText}>{error}</Text></View> : null}
+          {error || authError ? <View style={[styles.errorBox, (error.startsWith('Account created') || error.startsWith('Password reset')) && styles.successBox]}><Text style={styles.errorText}>{error || authError}</Text></View> : null}
           <PrimaryButton onPress={submit} disabled={busy || authMode === 'unavailable'} icon={busy ? undefined : 'arrow-forward'}>
             {busy ? <ActivityIndicator color={colors.white} /> : (isRegister ? 'Create account' : 'Sign in securely')}
           </PrimaryButton>
           <View style={styles.switchRow}>
             <Text style={styles.switchCopy}>{isRegister ? 'Already part of StudentNet?' : 'New to the community?'}</Text>
-            <Pressable onPress={() => { setMode(isRegister ? 'login' : 'register'); setError(''); }}><Text style={styles.switchAction}>{isRegister ? ' Sign in' : ' Create profile'}</Text></Pressable>
+            <Pressable onPress={() => { setMode(isRegister ? 'login' : 'register'); setError(''); clearAuthError(); }}><Text style={styles.switchAction}>{isRegister ? ' Sign in' : ' Create profile'}</Text></Pressable>
           </View>
 
           <View style={styles.previewBox}>

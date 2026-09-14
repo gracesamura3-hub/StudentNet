@@ -59,6 +59,8 @@ Restart Expo after changing `.env` so the `EXPO_PUBLIC_` values are rebuilt into
 npx expo start --clear
 ```
 
+Keeping `.env` in `.gitignore` is correct. For a hosted build, configure the same `EXPO_PUBLIC_FIREBASE_*` values in the hosting or CI environment before running the Expo export; an ignored local file is not available to a remote build. Firebase Web App config is embedded in the client by design and is not a service-account secret—Firestore rules and authorised domains protect access. Never expose a Firebase Admin private key or service-account JSON in an `EXPO_PUBLIC_` variable.
+
 ### Richfield sign-in checklist
 
 A Richfield mailbox is not automatically a StudentNet account. A working student account has all three of the following:

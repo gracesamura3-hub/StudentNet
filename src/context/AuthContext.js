@@ -38,10 +38,10 @@ export function AuthProvider({ children }) {
       stopProfile = onSnapshot(doc(db, 'users', user.uid), snap => {
         const nextProfile = snap.exists() ? normalizeUserProfile(snap.id, snap.data()) : null;
         setProfile(nextProfile);
-        if (nextProfile?.status === 'active' && !firebaseSignInInProgress.current) {
-          setFirebaseSessionReady(true);
+        if (nextProfile?.status === 'active') {
+          if (!firebaseSignInInProgress.current) setFirebaseSessionReady(true);
+          setAuthError('');
         }
-        setAuthError('');
         setLoading(false);
       }, error => {
         setProfile(null);
@@ -88,14 +88,19 @@ export function AuthProvider({ children }) {
     authError,
     enterDemo: role => setDemoRole(role),
     changeDemoRole: role => setDemoRole(role),
+    clearAuthError: () => setAuthError(''),
     signIn: async (email, password) => {
       if (isFirebaseConfigured) {
         firebaseSignInInProgress.current = true;
         setFirebaseSessionReady(false);
+        setAuthError('');
         try {
           const result = await signInUser(email, password);
           setFirebaseSessionReady(true);
           return result;
+        } catch (error) {
+          setAuthError(getAuthErrorMessage(error));
+          throw error;
         } finally {
           firebaseSignInInProgress.current = false;
         }
