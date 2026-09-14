@@ -15,6 +15,7 @@ import NetworkScreen from './src/screens/NetworkScreen';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import OpportunitiesScreen from './src/screens/OpportunitiesScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import AdminScreen from './src/screens/AdminScreen';
 import { colors } from './src/theme';
 
 enableScreens();
@@ -29,6 +30,9 @@ const icons = {
 };
 
 function MainTabs() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+
   return (
     <Tabs.Navigator
       screenOptions={({ route }) => ({
@@ -47,6 +51,7 @@ function MainTabs() {
       <Tabs.Screen name="Opportunities" component={OpportunitiesScreen} options={{ tabBarLabel: 'Careers' }} />
       <Tabs.Screen name="Inbox" component={InboxScreen} options={{ tabBarBadge: 3, tabBarBadgeStyle: styles.tabBadge }} />
       <Tabs.Screen name="Profile" component={ProfileScreen} />
+      {isAdmin ? <Tabs.Screen name="Admin" component={AdminScreen} options={{ tabBarLabel: 'Admin' }} /> : null}
       <Tabs.Screen name="Insights" component={InsightsScreen} options={{ tabBarButton: () => null }} />
     </Tabs.Navigator>
   );
