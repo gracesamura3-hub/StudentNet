@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PrimaryButton } from '../components/ui';
+import { buildContextualNiaTip } from '../utils/profileAi';
 import { colors } from '../theme';
 
 const steps = [
@@ -16,6 +17,8 @@ export default function OnboardingScreen({ user, onComplete }) {
   const [index, setIndex] = useState(0);
   const step = steps[index];
   const final = index === steps.length - 1;
+  const niaTip = useMemo(() => buildContextualNiaTip(user || {}), [user]);
+
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.top}><View style={styles.brand}><Ionicons name="people" size={18} color={colors.white} /></View><Text style={styles.brandName}>StudentNet</Text><Text style={styles.counter}>{index + 1} / {steps.length}</Text></View>
@@ -29,7 +32,7 @@ export default function OnboardingScreen({ user, onComplete }) {
       </View>
       <View style={styles.copy}>
         <Text style={styles.eyebrow}>{step.eyebrow}</Text><Text style={styles.title}>{step.title}</Text><Text style={styles.body}>{step.copy}</Text>
-        <View style={styles.note}><View style={styles.noteIcon}><Ionicons name="bulb-outline" size={19} color="#956600" /></View><Text style={styles.noteText}>{step.note}</Text></View>
+        <View style={styles.note}><View style={styles.noteIcon}><Ionicons name="bulb-outline" size={19} color="#956600" /></View><Text style={styles.noteText}>{final ? niaTip : step.note}</Text></View>
       </View>
       <View style={styles.footer}>
         <View style={styles.dots}>{steps.map((_, dotIndex) => <View key={dotIndex} style={[styles.dot, dotIndex === index && styles.dotActive]} />)}</View>
