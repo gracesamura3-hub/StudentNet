@@ -14,36 +14,65 @@ function labelForRole(role) {
 
 export default function AdminScreen() {
   const { user } = useAuth();
-  const [requests, setRequests] = useState([]);
+  const [userRequests, setUserRequests] = useState([]);
+  const [opportunityRequests, setOpportunityRequests] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!db || !user || user.role !== 'admin') return undefined;
 
-    const q = query(
+    const userQuery = query(
       collection(db, 'users'),
       where('role', 'in', ['business', 'alumni']),
       where('status', '==', 'pending'),
     );
 
-    const unsubscribe = onSnapshot(
-      q,
+    const opportunityQuery = query(
+      collection(db, 'opportunities'),
+      where('status', '==', 'pending'),
+    );
+
+    const unsubscribeUsers = onSnapshot(
+      userQuery,
       snapshot => {
         const items = snapshot.docs
           .map(docSnap => ({ id: docSnap.id, ...docSnap.data() }))
           .sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
-        setRequests(items);
+        setUserRequests(items);
         setLoading(false);
       },
       () => setLoading(false),
     );
 
-    return () => unsubscribe();
+    const unsubscribeOpportunities = onSnapshot(
+      opportunityQuery,
+      snapshot => {
+        const items = snapshot.docs
+          .map(docSnap => ({ id: docSnap.id, ...docSnap.data() }))
+          .sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+        setOpportunityRequests(items);
+        setLoading(false);
+      },
+      () => setLoading(false),
+    );
+
+    return () => {
+      unsubscribeUsers();
+      unsubscribeOpportunities();
+    };
   }, [user]);
 
   const handleDecision = async (profileId, nextStatus) => {
     if (!db || !profileId) return;
     await updateDoc(doc(db, 'users', profileId), {
+      status: nextStatus,
+      updatedAt: serverTimestamp(),
+    });
+  };
+
+  const handleOpportunityDecision = async (opportunityId, nextStatus) => {
+    if (!db || !opportunityId) return;
+    await updateDoc(doc(db, 'opportunities', opportunityId), {
       status: nextStatus,
       updatedAt: serverTimestamp(),
     });
@@ -63,42 +92,85 @@ export default function AdminScreen() {
 
         {loading ? (
           <View style={styles.loading}><ActivityIndicator color={colors.green} size="small" /></View>
-        ) : requests.length === 0 ? (
-          <View style={styles.panel}>
-            <EmptyState icon="shield-checkmark-outline" title="No pending approvals" detail="New business and alumni verification requests will appear here." />
-          </View>
         ) : (
           <View style={styles.list}>
-            {requests.map(profile => (
-              <View key={profile.id} style={styles.card}>
-                <View style={styles.cardHeader}>
-                  <View style={styles.avatarWrap}>
-                    <Text style={styles.avatarText}>{(profile.firstName || profile.name || 'U').slice(0, 1).toUpperCase()}{(profile.lastName || '').slice(0, 1).toUpperCase() || ''}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.name}>{profile.name || `${profile.firstName || ''} ${profile.lastName || ''}`.trim() || 'Pending member'}</Text>
-                    <Text style={styles.meta}>{labelForRole(profile.role)} · {profile.email}</Text>
-                  </View>
-                  <View style={styles.badge}><Text style={styles.badgeText}>{profile.role}</Text></View>
-                </View>
+            {userRequests.length > 0 ? (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Pending member requests</Text>
+                {userRequests.map(profile => (
+                  <View key={profile.id} style={styles.card}>
+                    <View style={styles.cardHeader}>
+                      <View style={styles.avatarWrap}>
+                        <Text style={styles.avatarText}>{(profile.firstName || profile.name || 'U').slice(0, 1).toUpperCase()}{(profile.lastName || '').slice(0, 1).toUpperCase() || ''}</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.name}>{profile.name || `${profile.firstName || ''} ${profile.lastName || ''}`.trim() || 'Pending member'}</Text>
+                        <Text style={styles.meta}>{labelForRole(profile.role)} · {profile.email}</Text>
+                      </View>
+                      <View style={styles.badge}><Text style={styles.badgeText}>{profile.role}</Text></View>
+                    </View>
 
-                <View style={styles.metaRow}>
-                  <Ionicons name={profile.role === 'business' ? 'business-outline' : 'ribbon-outline'} size={16} color={colors.green} />
-                  <Text style={styles.reference}>
-                    {profile.verificationReference || 'No verification reference provided'}
-                  </Text>
-                </View>
+                    <View style={styles.metaRow}>
+                      <Ionicons name={profile.role === 'business' ? 'business-outline' : 'ribbon-outline'} size={16} color={colors.green} />
+                      <Text style={styles.reference}>
+                        {profile.verificationReference || 'No verification reference provided'}
+                      </Text>
+                    </View>
 
-                <View style={styles.actions}>
-                  <Pressable onPress={() => handleDecision(profile.id, 'active')} style={styles.approve}>
-                    <Text style={styles.approveText}>Approve</Text>
-                  </Pressable>
-                  <Pressable onPress={() => handleDecision(profile.id, 'rejected')} style={styles.reject}>
-                    <Text style={styles.rejectText}>Reject</Text>
-                  </Pressable>
-                </View>
+                    <View style={styles.actions}>
+                      <Pressable onPress={() => handleDecision(profile.id, 'active')} style={styles.approve}>
+                        <Text style={styles.approveText}>Approve</Text>
+                      </Pressable>
+                      <Pressable onPress={() => handleDecision(profile.id, 'rejected')} style={styles.reject}>
+                        <Text style={styles.rejectText}>Reject</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ))}
               </View>
-            ))}
+            ) : null}
+
+            {opportunityRequests.length > 0 ? (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Pending opportunities</Text>
+                {opportunityRequests.map(opportunity => (
+                  <View key={opportunity.id} style={styles.card}>
+                    <View style={styles.cardHeader}>
+                      <View style={styles.avatarWrap}>
+                        <Text style={styles.avatarText}>{(opportunity.company || 'O').slice(0, 1).toUpperCase()}</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.name}>{opportunity.title || 'Opportunity'}</Text>
+                        <Text style={styles.meta}>{opportunity.company || 'Unspecified company'} · {opportunity.type || 'Role'}</Text>
+                      </View>
+                      <View style={styles.badge}><Text style={styles.badgeText}>OPP</Text></View>
+                    </View>
+
+                    <View style={styles.metaRow}>
+                      <Ionicons name="briefcase-outline" size={16} color={colors.green} />
+                      <Text style={styles.reference}>
+                        {Array.isArray(opportunity.skills) ? opportunity.skills.join(', ') : 'No skills listed'}
+                      </Text>
+                    </View>
+
+                    <View style={styles.actions}>
+                      <Pressable onPress={() => handleOpportunityDecision(opportunity.id, 'approved')} style={styles.approve}>
+                        <Text style={styles.approveText}>Approve</Text>
+                      </Pressable>
+                      <Pressable onPress={() => handleOpportunityDecision(opportunity.id, 'rejected')} style={styles.reject}>
+                        <Text style={styles.rejectText}>Reject</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
+            {userRequests.length === 0 && opportunityRequests.length === 0 ? (
+              <View style={styles.panel}>
+                <EmptyState icon="shield-checkmark-outline" title="No pending approvals" detail="New business, alumni, and opportunity review requests will appear here." />
+              </View>
+            ) : null}
           </View>
         )}
       </ScrollView>
@@ -114,7 +186,9 @@ const styles = StyleSheet.create({
   title: { color: colors.ink, fontSize: 27, fontWeight: '900', letterSpacing: -0.9, marginTop: 4 },
   loading: { paddingTop: 30, alignItems: 'center' },
   panel: { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, borderRadius: 24, padding: 8 },
-  list: { gap: 14 },
+  list: { gap: 18 },
+  section: { gap: 14 },
+  sectionTitle: { color: colors.ink, fontSize: 15, fontWeight: '900', marginBottom: 4 },
   card: { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, borderRadius: 22, padding: 16 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   avatarWrap: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.mint, alignItems: 'center', justifyContent: 'center' },
