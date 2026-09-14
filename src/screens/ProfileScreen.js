@@ -38,7 +38,7 @@ export default function ProfileScreen() {
           <View style={styles.avatarWrap}><Avatar initials={user.initials} size={82} color={colors.mint} /><View style={styles.verified}><Ionicons name="checkmark" size={12} color={colors.white} /></View></View>
           <Pressable style={styles.editButton}><Ionicons name="create-outline" size={15} color={colors.green} /><Text style={styles.editText}>Edit profile</Text></Pressable>
           <Text style={styles.name}>{user.name}</Text><Text style={styles.headline}>{user.headline}</Text>
-          <Text style={styles.meta}><Ionicons name="location-outline" size={12} /> {user.campus}  ·  {user.year}</Text>
+          <Text style={styles.meta}><Ionicons name="location-outline" size={12} /> {user.campus ? `${user.campus}  ·  ` : ''}{user.year || ''}</Text>
           <View style={styles.connections}><Text style={styles.connectionValue}>{user.role === 'business' ? '3.8k' : '126'}</Text><Text style={styles.connectionLabel}>{user.role === 'business' ? ' followers' : ' connections'}</Text><View style={styles.dot} /><Text style={styles.connectionValue}>{user.role === 'business' ? '148' : '284'}</Text><Text style={styles.connectionLabel}>{user.role === 'business' ? ' applicants' : ' profile views'}</Text></View>
           <View style={styles.profileActions}><PrimaryButton compact icon="person-add-outline">Connect</PrimaryButton><Pressable style={styles.messageButton}><Ionicons name="chatbubble-outline" size={17} color={colors.green} /><Text style={styles.messageText}>Message</Text></Pressable><IconButton name="ellipsis-horizontal" size={40} /></View>
         </View>
@@ -59,7 +59,7 @@ export default function ProfileScreen() {
         </ProfileSection>
 
         <ProfileSection title="Skills & endorsements" action="Add skill">
-          <View style={styles.skills}>{user.skills.map((skill, index) => <View key={skill} style={styles.skill}><Text style={styles.skillName}>{skill}</Text><View style={styles.endorsements}><Ionicons name="people" size={11} color={colors.green} /><Text style={styles.endorsementText}>{14 - index * 2}</Text></View></View>)}</View>
+          <View style={styles.skills}>{(user.skills || []).map((skill, index) => <View key={skill} style={styles.skill}><Text style={styles.skillName}>{skill}</Text><View style={styles.endorsements}><Ionicons name="people" size={11} color={colors.green} /><Text style={styles.endorsementText}>{14 - index * 2}</Text></View></View>)}</View>
         </ProfileSection>
 
         <ProfileSection title="Featured projects" action="See all">
