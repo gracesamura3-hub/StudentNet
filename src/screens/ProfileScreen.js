@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Avatar, IconButton, PrimaryButton, SectionHeader } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
+import { buildAssistantReply, buildContextualNiaTip } from '../utils/profileAi';
 import { colors } from '../theme';
 
 const portfolio = [
@@ -22,6 +23,7 @@ export default function ProfileScreen() {
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [rolesOpen, setRolesOpen] = useState(false);
   const [visibility, setVisibility] = useState('Connections');
+  const niaTip = useMemo(() => buildContextualNiaTip(user || {}), [user]);
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -38,7 +40,7 @@ export default function ProfileScreen() {
 
         <Pressable onPress={() => setAssistantOpen(true)} style={styles.coachCard}>
           <View style={styles.coachIcon}><Ionicons name="sparkles" size={22} color={colors.forest} /></View>
-          <View style={{ flex: 1 }}><Text style={styles.coachEyebrow}>AI PROFILE COACH</Text><Text style={styles.coachTitle}>Your profile is {user.completion}% complete</Text><Text style={styles.coachCopy}>Add one measurable project outcome to stand out.</Text></View>
+          <View style={{ flex: 1 }}><Text style={styles.coachEyebrow}>AI PROFILE COACH</Text><Text style={styles.coachTitle}>Your profile is {user.completion}% complete</Text><Text style={styles.coachCopy}>{niaTip}</Text></View>
           <View style={styles.progressCircle}><Text style={styles.progressText}>{user.completion}%</Text></View>
         </Pressable>
 
@@ -98,7 +100,7 @@ function AssistantModal({ visible, onClose, user }) {
         if (!response.ok) throw new Error('Assistant request failed');
         answer = (await response.json()).answer;
       } else {
-        answer = 'In the configured app, your secure AI endpoint will review this against your actual profile. A strong next step is to describe one project using the problem, your contribution, and a measurable result.';
+        answer = buildAssistantReply(text, user);
       }
       setMessages(current => [...current, { id: `${Date.now()}-assistant`, mine: false, text: answer }]);
     } catch {
