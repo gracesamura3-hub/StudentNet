@@ -15,7 +15,7 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [localProfile, setLocalProfile] = useState(null);
   const [demoRole, setDemoRole] = useState(null);
-  const [loading, setLoading] = useState(isFirebaseConfigured || isLocalAuthEnabled);
+  const [loading, setLoading] = useState(Boolean(isFirebaseConfigured || isLocalAuthEnabled));
   const [authError, setAuthError] = useState('');
   const localAuthOperation = useRef(0);
 

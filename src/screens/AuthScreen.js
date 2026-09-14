@@ -55,6 +55,11 @@ export default function AuthScreen() {
     }
   }
 
+  function openRegister() {
+    setError('');
+    setMode('register');
+  }
+
   if (mode === 'welcome') {
     return (
       <View style={styles.welcomePage}>
@@ -84,10 +89,10 @@ export default function AuthScreen() {
             <Text style={styles.heroBody}>Build a portfolio that speaks for you. Meet mentors, discover careers, and find your next opportunity.</Text>
           </View>
           <View style={styles.welcomeActions}>
-            <Pressable style={styles.lightButton} onPress={() => setMode('register')}>
+            <Pressable style={styles.lightButton} onPress={openRegister}>
               <Text style={styles.lightButtonText}>Create your profile</Text><Ionicons name="arrow-forward" size={19} color={colors.forest} />
             </Pressable>
-            <Pressable style={styles.ghostButton} onPress={() => setMode('login')}><Text style={styles.ghostButtonText}>I already have an account</Text></Pressable>
+            <Pressable style={styles.ghostButton} onPress={() => { setError(''); setMode('login'); }}><Text style={styles.ghostButtonText}>I already have an account</Text></Pressable>
             <Pressable onPress={() => enterDemo('student')} style={styles.previewLink}>
               <Ionicons name="play-circle-outline" size={17} color={colors.lime} /><Text style={styles.previewLinkText}>Explore the interactive preview</Text>
             </Pressable>
@@ -155,7 +160,7 @@ export default function AuthScreen() {
             <Text style={styles.previewTitle}>Preview every role</Text>
             <Text style={styles.previewCopy}>Explore role-specific experiences without creating placeholder credentials.</Text>
             <View style={styles.previewRoles}>
-              {roles.map(item => <Pressable key={item.id} onPress={() => enterDemo(item.id)} style={styles.previewRole}><Ionicons name={item.icon} size={18} color={colors.green} /><Text style={styles.previewRoleText}>{item.label}</Text></Pressable>)}
+              {roles.filter(item => item.id !== 'admin').map(item => <Pressable key={item.id} onPress={() => enterDemo(item.id)} style={styles.previewRole}><Ionicons name={item.icon} size={18} color={colors.green} /><Text style={styles.previewRoleText}>{item.label}</Text></Pressable>)}
             </View>
           </View>
           <Text style={styles.authMode}>Authentication: {authMode === 'firebase' ? 'Firebase Auth' : authMode === 'local' ? 'device-only development mode' : 'configuration required'}</Text>
