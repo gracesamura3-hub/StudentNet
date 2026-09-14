@@ -18,7 +18,24 @@ export default function OpportunitiesScreen() {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('Best matches');
   const [applied, setApplied] = useState([]);
-  const filteredJobs = useMemo(() => jobs.filter(job => `${job.title} ${job.company} ${job.skills.join(' ')}`.toLowerCase().includes(query.toLowerCase())), [jobs, query]);
+
+  const studentSkills = useMemo(() => {
+    if (!user || !Array.isArray(user.skills)) return [];
+    return user.skills.map(skill => String(skill).trim().toLowerCase()).filter(Boolean);
+  }, [user]);
+
+  const jobsWithMatch = useMemo(() => {
+    const studentSkillSet = new Set(studentSkills);
+    return jobs.map(job => {
+      const requiredSkills = Array.isArray(job.skills) ? job.skills.map(skill => String(skill).trim().toLowerCase()).filter(Boolean) : [];
+      const overlap = requiredSkills.filter(skill => studentSkillSet.has(skill)).length;
+      const match = requiredSkills.length ? Math.round((overlap / requiredSkills.length) * 100) : 0;
+      return { ...job, match };
+    });
+  }, [jobs, studentSkills]);
+
+  const filteredJobs = useMemo(() => jobsWithMatch.filter(job => `${job.title} ${job.company} ${job.skills.join(' ')}`.toLowerCase().includes(query.toLowerCase())), [jobsWithMatch, query]);
+  const topMatchJob = useMemo(() => [...jobsWithMatch].sort((a, b) => b.match - a.match)[0], [jobsWithMatch]);
   const isBusiness = user.role === 'business';
   const isAdmin = user.role === 'admin';
 
@@ -30,7 +47,6 @@ export default function OpportunitiesScreen() {
       color: job.color || colors.bluePale,
       skills: job.skills || [],
       posted: 'recently',
-      match: job.match || 0,
     }))), () => {});
   }, [isAdmin, isBusiness, isDemo]);
 
@@ -61,8 +77,8 @@ export default function OpportunitiesScreen() {
           </LinearGradient>
         ) : (
           <View style={styles.matchCard}>
-            <View style={styles.matchRing}><Text style={styles.matchValue}>94%</Text><Text style={styles.matchLabel}>MATCH</Text></View>
-            <View style={{ flex: 1 }}><Text style={styles.matchEyebrow}>YOUR TOP MATCH</Text><Text style={styles.matchTitle}>Graduate Software Engineer</Text><Text style={styles.matchCopy}>Your skills line up with 5 of 6 requirements.</Text></View>
+            <View style={styles.matchRing}><Text style={styles.matchValue}>{topMatchJob?.match ?? 0}%</Text><Text style={styles.matchLabel}>MATCH</Text></View>
+            <View style={{ flex: 1 }}><Text style={styles.matchEyebrow}>YOUR TOP MATCH</Text><Text style={styles.matchTitle}>{topMatchJob?.title || 'No matches yet'}</Text><Text style={styles.matchCopy}>{topMatchJob ? `Your skills line up with ${topMatchJob?.skills?.filter(skill => studentSkills.includes(String(skill).trim().toLowerCase())).length || 0} of ${topMatchJob?.skills?.length || 0} requirements.` : 'Add skills to your profile to improve matches.'}</Text></View>
             <Ionicons name="chevron-forward" size={19} color={colors.green} />
           </View>
         )}
