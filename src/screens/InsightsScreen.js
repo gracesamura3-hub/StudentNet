@@ -8,6 +8,7 @@ import { IconButton, Pill, SectionHeader } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase/config';
 import { colors } from '../theme';
+import { buildRoleInsightData, getRoleInsightsEyebrow, safeNumber } from '../utils/insightsUtils';
 
 const adminQueue = [
   { id: '1', title: 'Nova Labs Africa', detail: 'Business verification', icon: 'business-outline', tone: colors.bluePale },
@@ -15,36 +16,10 @@ const adminQueue = [
   { id: '3', title: 'Reported career story', detail: 'Content moderation', icon: 'flag-outline', tone: colors.coralPale },
 ];
 
-const safeNumber = value => {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : 0;
-};
-
 const formatCount = value => safeNumber(value).toLocaleString();
 
 function buildStudentData(user, posts) {
-  const profileViews = safeNumber(user?.profileViews);
-  const connectionCount = Array.isArray(user?.connectionIds)
-    ? user.connectionIds.length
-    : Array.isArray(user?.connections)
-      ? user.connections.length
-      : 0;
-  const postEngagement = posts.reduce((sum, post) => sum + safeNumber(post.reactions) + safeNumber(post.commentCount), 0);
-  const videoPosts = posts.filter(post => post?.type === 'video' || post?.mediaType === 'video').length;
-  return {
-    headline: 'Your community engagement is growing',
-    chartLabel: 'Profile + network activity · real-time',
-    cards: [
-      { label: 'Profile views', value: formatCount(profileViews), delta: profileViews ? '+real' : '0' },
-      { label: 'Connections', value: formatCount(connectionCount), delta: connectionCount ? '+real' : '0' },
-      { label: 'Engagement', value: formatCount(postEngagement), delta: videoPosts ? `${videoPosts} video posts` : `${posts.length} posts` },
-    ],
-    skills: [
-      { name: 'Profile reach', value: profileViews ? Math.min(100, Math.round(profileViews / 3)) : 0 },
-      { name: 'Network health', value: connectionCount ? Math.min(100, Math.round(connectionCount * 3)) : 0 },
-      { name: 'Post engagement', value: postEngagement ? Math.min(100, Math.round(postEngagement / 5)) : 0 },
-    ],
-  };
+  return buildRoleInsightData(user, posts);
 }
 
 async function getBusinessMetrics(user) {
@@ -147,10 +122,17 @@ export default function InsightsScreen() {
           return;
         }
 
-        const postsSnap = await getDocs(query(collection(db, 'posts'), where('authorId', '==', user.id)));
-        const posts = postsSnap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
-        const studentData = buildStudentData(user, posts);
-        if (active) setData(studentData);
+        if (user.role === 'student' || user.role === 'alumni') {
+          const postsSnap = await getDocs(query(collection(db, 'posts'), where('authorId', '==', user.id)));
+          const posts = postsSnap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+          const studentData = buildStudentData(user, posts);
+          if (active) setData(studentData);
+          return;
+        }
+
+        const fallbackPosts = await getDocs(query(collection(db, 'posts'), where('authorId', '==', user.id)));
+        const fallbackData = buildStudentData(user, fallbackPosts.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })));
+        if (active) setData(fallbackData);
       } catch {
         if (active) {
           setData({
@@ -173,7 +155,7 @@ export default function InsightsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}><View><Text style={styles.eyebrow}>{user.role === 'admin' ? 'PLATFORM ANALYTICS' : user.role === 'business' ? 'RECRUITMENT ANALYTICS' : 'YOUR ANALYTICS'}</Text><Text style={styles.title}>Insights</Text></View><IconButton name="download-outline" /></View>
+        <View style={styles.header}><View><Text style={styles.eyebrow}>{getRoleInsightsEyebrow(user.role)}</Text><Text style={styles.title}>Insights</Text></View><IconButton name="download-outline" /></View>
         <View style={styles.healthCard}>
           <View style={styles.ringWrap}>
             <Svg width={82} height={82} viewBox="0 0 82 82"><Circle cx="41" cy="41" r="34" fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth="8" /><Circle cx="41" cy="41" r="34" fill="none" stroke={colors.lime} strokeWidth="8" strokeLinecap="round" strokeDasharray={`${2 * Math.PI * 34 * 0.84} ${2 * Math.PI * 34}`} transform="rotate(-90 41 41)" /></Svg>
