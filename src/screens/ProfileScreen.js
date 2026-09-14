@@ -24,6 +24,11 @@ export default function ProfileScreen() {
   const [rolesOpen, setRolesOpen] = useState(false);
   const [visibility, setVisibility] = useState('Connections');
   const niaTip = useMemo(() => buildContextualNiaTip(user || {}), [user]);
+
+  if (!user || !user.id) {
+    return <SafeAreaView style={styles.safe} edges={['top']}><View style={styles.content}><Text style={styles.name}>Loading profile…</Text></View></SafeAreaView>;
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>

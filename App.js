@@ -30,8 +30,8 @@ const icons = {
 };
 
 function MainTabs() {
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const { user, isDemo } = useAuth();
+  const isAdmin = Boolean(user?.role === 'admin' && !isDemo);
 
   return (
     <Tabs.Navigator
@@ -60,8 +60,9 @@ function MainTabs() {
 function AppContent() {
   const { user, loading } = useAuth();
   const [onboardedUsers, setOnboardedUsers] = useState(new Set());
+
   if (loading) return <View style={styles.loading}><ActivityIndicator color={colors.green} size="large" /></View>;
-  if (!user) return <AuthScreen />;
+  if (!user || !user.id) return <AuthScreen />;
   if (!onboardedUsers.has(user.id)) return <OnboardingScreen user={user} onComplete={() => setOnboardedUsers(current => new Set([...current, user.id]))} />;
   return (
     <NavigationContainer theme={{ ...DefaultTheme, colors: { ...DefaultTheme.colors, background: colors.cream } }}>
