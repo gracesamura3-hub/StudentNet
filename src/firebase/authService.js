@@ -130,6 +130,7 @@ export async function registerUser({ email, password, firstName, lastName, role,
     skills: [],
     visibility: { public: ['name', 'headline', 'skills'], business: ['name', 'headline', 'skills', 'portfolio'] },
     completion: 20,
+    skills: [],
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
