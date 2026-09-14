@@ -23,7 +23,21 @@ export default function ProfileScreen() {
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [rolesOpen, setRolesOpen] = useState(false);
   const [visibility, setVisibility] = useState('Connections');
-  const niaTip = useMemo(() => buildContextualNiaTip(user || {}), [user]);
+  const safeUser = useMemo(() => ({
+    id: user?.id || 'loading-user',
+    firstName: user?.firstName || 'Student',
+    lastName: user?.lastName || 'Member',
+    name: user?.name || `${user?.firstName || 'Student'} ${user?.lastName || 'Member'}`.trim() || 'Student profile',
+    initials: user?.initials || 'SN',
+    headline: user?.headline || 'Richfield community member',
+    programme: user?.programme || 'Richfield community',
+    campus: user?.campus || 'Richfield community',
+    year: user?.year || 'Student',
+    completion: Number(user?.completion) || 25,
+    role: user?.role || 'student',
+    skills: Array.isArray(user?.skills) ? user.skills : [],
+  }), [user]);
+  const niaTip = useMemo(() => buildContextualNiaTip(safeUser), [safeUser]);
 
   if (!user || !user.id) {
     return <SafeAreaView style={styles.safe} edges={['top']}><View style={styles.content}><Text style={styles.name}>Loading profile…</Text></View></SafeAreaView>;
@@ -35,31 +49,31 @@ export default function ProfileScreen() {
         <View style={styles.topActions}><IconButton name="eye-outline" onPress={() => setVisibility(visibility === 'Connections' ? 'Public' : 'Connections')} /><View style={{ flex: 1 }} /><IconButton name="share-social-outline" /><IconButton name="settings-outline" /></View>
         <LinearGradient colors={['#0D3B2E', '#1E654A']} style={styles.cover}><View style={styles.coverOrb} /><Text style={styles.coverMonogram}>SN</Text></LinearGradient>
         <View style={styles.profileCard}>
-          <View style={styles.avatarWrap}><Avatar initials={user.initials} size={82} color={colors.mint} /><View style={styles.verified}><Ionicons name="checkmark" size={12} color={colors.white} /></View></View>
+          <View style={styles.avatarWrap}><Avatar initials={safeUser.initials} size={82} color={colors.mint} /><View style={styles.verified}><Ionicons name="checkmark" size={12} color={colors.white} /></View></View>
           <Pressable style={styles.editButton}><Ionicons name="create-outline" size={15} color={colors.green} /><Text style={styles.editText}>Edit profile</Text></Pressable>
-          <Text style={styles.name}>{user.name}</Text><Text style={styles.headline}>{user.headline}</Text>
-          <Text style={styles.meta}><Ionicons name="location-outline" size={12} /> {user.campus ? `${user.campus}  ·  ` : ''}{user.year || ''}</Text>
-          <View style={styles.connections}><Text style={styles.connectionValue}>{user.role === 'business' ? '3.8k' : '126'}</Text><Text style={styles.connectionLabel}>{user.role === 'business' ? ' followers' : ' connections'}</Text><View style={styles.dot} /><Text style={styles.connectionValue}>{user.role === 'business' ? '148' : '284'}</Text><Text style={styles.connectionLabel}>{user.role === 'business' ? ' applicants' : ' profile views'}</Text></View>
+          <Text style={styles.name}>{safeUser.name}</Text><Text style={styles.headline}>{safeUser.headline}</Text>
+          <Text style={styles.meta}><Ionicons name="location-outline" size={12} /> {safeUser.campus}  ·  {safeUser.year}</Text>
+          <View style={styles.connections}><Text style={styles.connectionValue}>{safeUser.role === 'business' ? '3.8k' : '126'}</Text><Text style={styles.connectionLabel}>{safeUser.role === 'business' ? ' followers' : ' connections'}</Text><View style={styles.dot} /><Text style={styles.connectionValue}>{safeUser.role === 'business' ? '148' : '284'}</Text><Text style={styles.connectionLabel}>{safeUser.role === 'business' ? ' applicants' : ' profile views'}</Text></View>
           <View style={styles.profileActions}><PrimaryButton compact icon="person-add-outline">Connect</PrimaryButton><Pressable style={styles.messageButton}><Ionicons name="chatbubble-outline" size={17} color={colors.green} /><Text style={styles.messageText}>Message</Text></Pressable><IconButton name="ellipsis-horizontal" size={40} /></View>
         </View>
 
         <Pressable onPress={() => setAssistantOpen(true)} style={styles.coachCard}>
           <View style={styles.coachIcon}><Ionicons name="sparkles" size={22} color={colors.forest} /></View>
-          <View style={{ flex: 1 }}><Text style={styles.coachEyebrow}>AI PROFILE COACH</Text><Text style={styles.coachTitle}>Your profile is {user.completion}% complete</Text><Text style={styles.coachCopy}>{niaTip}</Text></View>
-          <View style={styles.progressCircle}><Text style={styles.progressText}>{user.completion}%</Text></View>
+          <View style={{ flex: 1 }}><Text style={styles.coachEyebrow}>AI PROFILE COACH</Text><Text style={styles.coachTitle}>Your profile is {safeUser.completion}% complete</Text><Text style={styles.coachCopy}>{niaTip}</Text></View>
+          <View style={styles.progressCircle}><Text style={styles.progressText}>{safeUser.completion}%</Text></View>
         </Pressable>
 
         <View style={styles.visibilityRow}><Ionicons name={visibility === 'Public' ? 'globe-outline' : 'people-outline'} size={16} color={colors.green} /><Text style={styles.visibilityText}>Viewing as: <Text style={styles.visibilityStrong}>{visibility}</Text></Text><Pressable onPress={() => setVisibility(visibility === 'Connections' ? 'Public' : 'Connections')}><Text style={styles.visibilityAction}>Change</Text></Pressable></View>
 
         <ProfileSection title="About" action="Edit">
           <Text style={styles.about}>I’m a curious product-minded developer who enjoys turning human problems into thoughtful mobile experiences. I’m especially interested in fintech, accessibility and tools that open doors for young people.</Text>
-          <View style={styles.infoLine}><Ionicons name="school-outline" size={18} color={colors.green} /><View><Text style={styles.infoTitle}>{user.programme}</Text><Text style={styles.infoDetail}>Richfield · Expected graduation 2026</Text></View></View>
+          <View style={styles.infoLine}><Ionicons name="school-outline" size={18} color={colors.green} /><View><Text style={styles.infoTitle}>{safeUser.programme}</Text><Text style={styles.infoDetail}>Richfield · Expected graduation 2026</Text></View></View>
           <View style={styles.linkRow}><Ionicons name="logo-github" size={17} color={colors.ink} /><Text style={styles.linkText}>github.com/thandomokoena</Text><Ionicons name="open-outline" size={14} color={colors.green} /></View>
           <View style={styles.linkRow}><Ionicons name="logo-linkedin" size={17} color={colors.blue} /><Text style={styles.linkText}>linkedin.com/in/thando-mokoena</Text><Ionicons name="open-outline" size={14} color={colors.green} /></View>
         </ProfileSection>
 
         <ProfileSection title="Skills & endorsements" action="Add skill">
-          <View style={styles.skills}>{(user.skills || []).map((skill, index) => <View key={skill} style={styles.skill}><Text style={styles.skillName}>{skill}</Text><View style={styles.endorsements}><Ionicons name="people" size={11} color={colors.green} /><Text style={styles.endorsementText}>{14 - index * 2}</Text></View></View>)}</View>
+          <View style={styles.skills}>{safeUser.skills.map((skill, index) => <View key={skill} style={styles.skill}><Text style={styles.skillName}>{skill}</Text><View style={styles.endorsements}><Ionicons name="people" size={11} color={colors.green} /><Text style={styles.endorsementText}>{14 - index * 2}</Text></View></View>)}</View>
         </ProfileSection>
 
         <ProfileSection title="Featured projects" action="See all">

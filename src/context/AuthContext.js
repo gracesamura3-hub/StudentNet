@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import { doc, onSnapshot } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db, isFirebaseConfigured } from '../firebase/config';
-import { registerUser, resetPassword, signInUser, signOutUser } from '../firebase/authService';
+import { normalizeUserProfile, registerUser, resetPassword, signInUser, signOutUser } from '../firebase/authService';
 import { demoUsers } from '../data/demoData';
 import { registerPushToken } from '../firebase/notificationService';
 
@@ -31,7 +31,7 @@ export function AuthProvider({ children }) {
         return;
       }
       stopProfile = onSnapshot(doc(db, 'users', user.uid), snap => {
-        setProfile(snap.exists() ? { id: snap.id, ...snap.data() } : null);
+        setProfile(snap.exists() ? normalizeUserProfile({ id: snap.id, ...snap.data() }) : null);
         setLoading(false);
       }, () => setLoading(false));
     });
@@ -58,7 +58,7 @@ export function AuthProvider({ children }) {
     }
   }, [demoRole, profile?.id, profile?.status]);
 
-  const user = demoRole ? demoUsers[demoRole] : localProfile || profile;
+  const user = demoRole ? demoUsers[demoRole] : (localProfile || profile);
   const value = useMemo(() => ({
     user,
     firebaseUser,
@@ -101,15 +101,31 @@ export function AuthProvider({ children }) {
     signOut: async () => {
       const operation = ++localAuthOperation.current;
       setDemoRole(null);
-      if (isFirebaseConfigured) {
-        setLocalProfile(null);
-        await signOutUser();
-      } else if (isLocalAuthEnabled) {
-        const { signOutLocalUser } = await loadLocalAuth();
-        await signOutLocalUser();
-        if (operation === localAuthOperation.current) setLocalProfile(null);
-      } else {
-        setLocalProfile(null);
+      setLocalProfile(null);
+      setProfile(null);
+      setFirebaseUser(null);
+      setAuthError('');
+      try {
+        if (isFirebaseConfigured && auth) {
+          await signOutUser();
+          return;
+        }
+        if (isLocalAuthEnabled) {
+          const { signOutLocalUser } = await loadLocalAuth();
+          await signOutLocalUser();
+        }
+      } catch (error) {
+        if (operation === localAuthOperation.current) {
+          setAuthError(error?.message || 'Sign out failed. Please try again.');
+        }
+      } finally {
+        if (operation === localAuthOperation.current) {
+          setLocalProfile(null);
+          setProfile(null);
+          setFirebaseUser(null);
+          setDemoRole(null);
+          setLoading(false);
+        }
       }
     },
   }), [authError, demoRole, firebaseUser, loading, localProfile, user]);

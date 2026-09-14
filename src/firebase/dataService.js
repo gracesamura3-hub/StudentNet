@@ -33,6 +33,14 @@ export function listenToApprovedOpportunities(onData, onError) {
   return listenToCollection('opportunities', [where('status', '==', 'approved'), orderBy('publishedAt', 'desc'), limit(30)], onData, onError);
 }
 
+export function listenToPublishedEvents(onData, onError) {
+  return listenToCollection('events', [where('status', '==', 'published'), orderBy('createdAt', 'desc'), limit(12)], onData, onError);
+}
+
+export function listenToPublishedAnnouncements(onData, onError) {
+  return listenToCollection('announcements', [where('status', '==', 'published'), orderBy('createdAt', 'desc'), limit(12)], onData, onError);
+}
+
 export async function createPost(user, body) {
   requireDb();
   return addDoc(collection(db, 'posts'), {

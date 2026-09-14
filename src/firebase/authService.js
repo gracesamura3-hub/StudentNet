@@ -41,6 +41,31 @@ export function getAuthErrorMessage(error) {
   return 'Authentication failed. Check the Firebase setup and try again.';
 }
 
+export function normalizeUserProfile(profile = {}) {
+  const source = typeof profile === 'object' && profile ? profile : {};
+  const firstName = source.firstName || (typeof source.name === 'string' ? source.name.split(' ')[0] : '') || 'Student';
+  const lastName = source.lastName || (typeof source.name === 'string' ? source.name.split(' ').slice(1).join(' ') : '') || 'Member';
+  const name = source.name || `${firstName} ${lastName}`.trim() || 'StudentNet member';
+  const role = source.role || 'student';
+  const initials = source.initials || `${firstName[0] || 'S'}${lastName[0] || 'N'}`.toUpperCase();
+
+  return {
+    ...source,
+    id: source.id || source.uid || 'unknown-user',
+    firstName,
+    lastName,
+    name,
+    initials,
+    role,
+    headline: source.headline || (role === 'business' ? 'Verified employer' : role === 'alumni' ? 'Richfield alumni professional' : 'Richfield student'),
+    programme: source.programme || (role === 'business' ? 'Graduate talent partner' : 'Complete your programme'),
+    campus: source.campus || 'Richfield community',
+    year: source.year || (role === 'business' ? 'Verified employer' : role === 'alumni' ? 'Alumni' : 'Student'),
+    completion: Number.isFinite(Number(source.completion)) ? Number(source.completion) : 25,
+    skills: Array.isArray(source.skills) ? source.skills : [],
+  };
+}
+
 export async function signInUser(email, password) {
   assertFirebase();
   const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
@@ -98,6 +123,11 @@ export async function registerUser({ email, password, firstName, lastName, role,
     status,
     verified: false,
     verificationReference: verificationReference?.trim() || null,
+    headline: role === 'business' ? 'Verified employer' : role === 'alumni' ? 'Richfield alumni professional' : 'Richfield student',
+    programme: role === 'business' ? 'Graduate talent partner' : 'Complete your programme',
+    campus: 'Richfield community',
+    year: role === 'business' ? 'Verified employer' : role === 'alumni' ? 'Alumni' : 'Student',
+    skills: [],
     visibility: { public: ['name', 'headline', 'skills'], business: ['name', 'headline', 'skills', 'portfolio'] },
     completion: 20,
     skills: [],

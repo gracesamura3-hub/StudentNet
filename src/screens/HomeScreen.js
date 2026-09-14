@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Avatar, IconButton, Pill, SectionHeader } from '../components/ui';
 import { notifications, posts as seedPosts, stories } from '../data/demoData';
 import { useAuth } from '../context/AuthContext';
-import { createPost, listenToFeed, toggleReaction } from '../firebase/dataService';
+import { createPost, listenToFeed, listenToPublishedAnnouncements, listenToPublishedEvents, toggleReaction } from '../firebase/dataService';
 import { colors, shadow } from '../theme';
 
 const roleContent = {
@@ -19,6 +19,8 @@ const roleContent = {
 export default function HomeScreen({ navigation }) {
   const { user, isDemo } = useAuth();
   const [feed, setFeed] = useState(seedPosts);
+  const [events, setEvents] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
   const [composerOpen, setComposerOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [draft, setDraft] = useState('');
@@ -27,7 +29,7 @@ export default function HomeScreen({ navigation }) {
 
   useEffect(() => {
     if (isDemo) return undefined;
-    return listenToFeed(user.id, livePosts => setFeed(livePosts.map(post => ({
+    const stopFeed = listenToFeed(user.id, livePosts => setFeed(livePosts.map(post => ({
       ...post,
       initials: post.initials || post.author?.split(' ').map(part => part[0]).join('').slice(0, 2),
       role: post.authorHeadline || post.authorRole,
@@ -37,6 +39,9 @@ export default function HomeScreen({ navigation }) {
       comments: post.commentCount || 0,
       tag: post.tag || '#ProfessionalUpdate',
     }))), () => {});
+    const stopEvents = listenToPublishedEvents(items => setEvents(items.slice(0, 3)), () => {});
+    const stopAnnouncements = listenToPublishedAnnouncements(items => setAnnouncements(items.slice(0, 3)), () => {});
+    return () => { stopFeed(); stopEvents(); stopAnnouncements(); };
   }, [isDemo, user.id]);
 
   async function publishPost() {
@@ -88,6 +93,14 @@ export default function HomeScreen({ navigation }) {
           <QuickAction icon="people-outline" label="Find people" tone={colors.bluePale} iconColor={colors.blue} onPress={() => navigation.navigate('Network')} />
           <QuickAction icon="stats-chart-outline" label="My insights" tone={colors.goldPale} iconColor="#A97105" onPress={() => navigation.navigate('Insights')} />
         </View>
+
+        {announcements.length ? <View style={styles.section}><SectionHeader title="Announcements" action="Latest" /><View style={styles.noticeList}>{announcements.map(item => (
+          <View key={item.id} style={styles.noticeCard}><Text style={styles.noticeEyebrow}>{item.audience || 'All users'}</Text><Text style={styles.noticeTitle}>{item.title}</Text><Text style={styles.noticeBody}>{item.body}</Text></View>
+        ))}</View></View> : null}
+
+        {events.length ? <View style={styles.section}><SectionHeader title="Official events" action="View all" /><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.eventRow}>{events.map(event => (
+          <View key={event.id} style={styles.eventCard}><Text style={styles.eventDate}>{event.date || 'TBC'}</Text><Text style={styles.eventTitle}>{event.title}</Text><Text style={styles.eventMeta}>{event.location || 'Richfield Campus'}</Text></View>
+        ))}</ScrollView></View> : null}
 
         <View style={styles.section}>
           <SectionHeader title="Career stories" action="View all" />
@@ -199,6 +212,16 @@ const styles = StyleSheet.create({
   quickIcon: { width: 35, height: 35, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   quickLabel: { color: colors.ink, fontSize: 11, fontWeight: '800' },
   section: { marginTop: 26 },
+  noticeList: { gap: 10, marginTop: 10 },
+  noticeCard: { backgroundColor: colors.white, borderRadius: 18, borderWidth: 1, borderColor: colors.line, padding: 14 },
+  noticeEyebrow: { color: colors.green, fontSize: 8, fontWeight: '900', letterSpacing: 1.3 },
+  noticeTitle: { color: colors.ink, fontSize: 12, fontWeight: '900', marginTop: 5 },
+  noticeBody: { color: colors.muted, fontSize: 10, lineHeight: 16, marginTop: 5 },
+  eventRow: { gap: 10, paddingRight: 10 },
+  eventCard: { width: 170, borderRadius: 18, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, padding: 14 },
+  eventDate: { color: colors.green, fontSize: 9, fontWeight: '900', letterSpacing: 1.2 },
+  eventTitle: { color: colors.ink, fontSize: 12, fontWeight: '900', marginTop: 8 },
+  eventMeta: { color: colors.muted, fontSize: 9, marginTop: 5 },
   storyRow: { gap: 13, paddingRight: 12 },
   story: { width: 68, alignItems: 'center' },
   storyRing: { borderWidth: 2, borderColor: colors.lime, padding: 3, borderRadius: 34 },
