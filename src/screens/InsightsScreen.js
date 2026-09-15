@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { analytics as previewAnalytics, opportunities as previewOpportunities, posts as previewPosts } from '../data/demoData';
 import { db } from '../firebase/config';
 import { colors } from '../theme';
+import { buildRoleInsightData, getRoleInsightsEyebrow, safeNumber } from '../utils/insightsUtils';
 
 const adminQueue = [
   { id: '1', title: 'Nova Labs Africa', detail: 'Business verification', icon: 'business-outline', tone: colors.bluePale },
@@ -16,177 +17,10 @@ const adminQueue = [
   { id: '3', title: 'Reported career story', detail: 'Content moderation', icon: 'flag-outline', tone: colors.coralPale },
 ];
 
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const SERIES_COLORS = [colors.green, colors.lime, colors.gold, colors.blue, colors.coral];
-const RICHFIELD_PROGRAMMES = ['BSc Information Technology', 'BCom Accounting', 'BA Graphic Design', 'BSc Computer Science', 'Diploma in IT'];
-
-const safeNumber = value => {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : 0;
-};
-
 const formatCount = value => safeNumber(value).toLocaleString();
 
-const roleAccent = role => (role === 'admin' ? colors.coral : role === 'business' ? colors.gold : colors.green);
-
-function toDate(value) {
-  if (!value) return null;
-  if (typeof value.toDate === 'function') return value.toDate();
-  if (value instanceof Date) return value;
-  if (typeof value !== 'number' && typeof value !== 'string') return null;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function shortLabel(value, max = 9) {
-  const text = String(value || 'Untitled').trim() || 'Untitled';
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
-}
-
-function share(value, total) {
-  return total > 0 ? Math.round((value / total) * 100) : 0;
-}
-
-function countLabel(count, noun) {
-  const safeCount = safeNumber(count);
-  return `${formatCount(safeCount)} ${noun}${safeCount === 1 ? '' : 's'}`;
-}
-
-function skillList(value) {
-  return (Array.isArray(value) ? value : []).map(skill => String(skill).trim()).filter(Boolean);
-}
-
-function topEntries(counts, max = 6) {
-  return Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, max);
-}
-
-function shareRows(counts, total, noun, max = 6) {
-  return topEntries(counts, max).map(([name, count]) => ({
-    name: String(name)[0].toUpperCase() + String(name).slice(1),
-    percentage: share(count, total),
-    countText: countLabel(count, noun),
-    value: count,
-  }));
-}
-
-/**
- * Buckets authored posts into the last four weeks so the trend chart renders a
- * four point time series instead of a single cumulative counter.
- */
-function buildWeeklyTrend(user, posts) {
-  const storedWeeks = Array.isArray(user?.profileWeeklyViews) ? user.profileWeeklyViews.slice(-4).map(safeNumber) : null;
-  const buckets = [0, 1, 2, 3].map(index => ({
-    index,
-    label: `W${index + 1}`,
-    views: storedWeeks ? safeNumber(storedWeeks[index]) : 0,
-    engagement: 0,
-  }));
-
-  posts.forEach(post => {
-    const created = toDate(post?.createdAt);
-    if (!created) return;
-    const weeksAgo = Math.floor((Date.now() - created.getTime()) / WEEK_MS);
-    if (weeksAgo < 0 || weeksAgo > 3) return;
-    const bucket = buckets[3 - weeksAgo];
-    bucket.engagement += safeNumber(post?.reactions) + safeNumber(post?.commentCount ?? post?.comments);
-  });
-
-  const totalViews = safeNumber(user?.profileViews);
-  const estimatedViews = !storedWeeks && totalViews > 0;
-  if (estimatedViews) {
-    // Firestore stores profile views as a cumulative counter, so the four week history
-    // is shaped from the engagement curve and labelled as an estimate in the UI.
-    const weights = buckets.map(bucket => bucket.engagement);
-    const weightTotal = weights.reduce((sum, value) => sum + value, 0);
-    buckets.forEach((bucket, index) => {
-      const weight = weightTotal > 0 ? weights[index] / weightTotal : 1 / buckets.length;
-      bucket.views = Math.round(totalViews * weight);
-    });
-  }
-
-  return { buckets, estimatedViews };
-}
-
-function buildTrendBars(trend) {
-  return trend.buckets.flatMap(bucket => [
-    { label: bucket.label, value: bucket.views, color: colors.green },
-    { label: bucket.label, value: bucket.engagement, color: colors.lime },
-  ]);
-}
-
-/** Average profile completeness of the students enrolled in the same programme. */
-async function getPeerCompleteness(user) {
-  const programme = String(user?.programme || '').trim();
-  const fallback = { percentage: 72, label: 'programme benchmark' };
-  if (!programme || programme === 'Complete your programme') return fallback;
-  try {
-    const snapshot = await getDocs(query(collection(db, 'users'), where('role', '==', 'student'), where('programme', '==', programme), limit(40)));
-    const values = snapshot.docs.map(docSnap => safeNumber(docSnap.data().completion)).filter(value => value > 0);
-    if (values.length < 2) return fallback;
-    const average = Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
-    return { percentage: average, label: `${values.length} ${programme} peers` };
-  } catch {
-    // Firestore visibility rules can hide peer profiles; the benchmark keeps the ring readable.
-    return fallback;
-  }
-}
-
-/** Live demand for the student's own skills across approved opportunities. */
-async function getRecruiterSkillDemand(user) {
-  const skills = skillList(user?.skills).slice(0, 6);
-  if (!skills.length) return { rows: [], empty: 'Add skills to your profile to see what recruiters are searching for.' };
-  try {
-    const snapshot = await getDocs(query(collection(db, 'opportunities'), where('status', '==', 'approved'), limit(60)));
-    const liveRoles = snapshot.docs.map(docSnap => new Set([
-      ...skillList(docSnap.data().skills).map(skill => skill.toLowerCase()),
-      ...skillList(docSnap.data().requiredSkills).map(skill => skill.toLowerCase()),
-    ]));
-    if (!liveRoles.length) return { rows: skills.map(name => ({ name, percentage: 0, countText: 'No live roles yet' })), empty: '' };
-    return {
-      rows: skills
-        .map(name => {
-          const matches = liveRoles.filter(role => role.has(name.toLowerCase())).length;
-          return { name, percentage: share(matches, liveRoles.length), countText: `${formatCount(matches)} of ${formatCount(liveRoles.length)} live roles` };
-        })
-        .sort((a, b) => b.percentage - a.percentage),
-      empty: '',
-    };
-  } catch {
-    return { rows: skills.map(name => ({ name, percentage: 0, countText: 'Demand data unavailable' })), empty: '' };
-  }
-}
-
-async function getStudentMetrics(user) {
-  const postsSnap = await getDocs(query(collection(db, 'posts'), where('authorId', '==', user.id)));
-  const posts = postsSnap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
-  const [peer, demand] = await Promise.all([getPeerCompleteness(user), getRecruiterSkillDemand(user)]);
-
-  const trend = buildWeeklyTrend(user, posts);
-  const connectionCount = Array.isArray(user?.connectionIds)
-    ? user.connectionIds.length
-    : Array.isArray(user?.connections)
-      ? user.connections.length
-      : 0;
-  const totalViews = safeNumber(user?.profileViews);
-  const engagement = posts.reduce((sum, post) => sum + safeNumber(post.reactions) + safeNumber(post.commentCount ?? post.comments), 0);
-  const videoPosts = posts.filter(post => post?.type === 'video' || post?.mediaType === 'video').length;
-
-  return {
-    headline: 'Your visibility and engagement, tracked live',
-    chartLabel: `Profile views${trend.estimatedViews ? ' (estimated from your view counter)' : ''} and post engagement · last 4 weeks`,
-    chart: buildTrendBars(trend),
-    chartLegend: [{ label: 'Profile views', color: colors.green }, { label: 'Engagement', color: colors.lime }],
-    skills: demand.rows,
-    skillsEmpty: demand.empty,
-    cards: [
-      { label: 'Profile views', value: formatCount(totalViews), delta: totalViews ? 'tracked total' : 'no views yet' },
-      { label: 'Connections', value: formatCount(connectionCount), delta: connectionCount ? 'accepted network' : 'not connected yet' },
-      { label: 'Engagement', value: formatCount(engagement), delta: videoPosts ? countLabel(videoPosts, 'video post') : countLabel(posts.length, 'post') },
-    ],
-    ring: { percentage: safeNumber(user?.completion), caption: 'profile complete', color: colors.lime },
-    peer,
-  };
+function buildStudentData(user, posts) {
+  return buildRoleInsightData(user, posts);
 }
 
 /** Reads readable applicant profiles so demographics can be filled in where Firestore allows it. */
@@ -594,12 +428,29 @@ export default function InsightsScreen() {
       }
 
       try {
-        const liveMetrics = role === 'admin'
-          ? await getAdminMetrics()
-          : role === 'business'
-            ? await getBusinessMetrics(user)
-            : await getStudentMetrics(user);
-        if (active) setData(liveMetrics);
+        if (user.role === 'admin') {
+          const adminMetrics = await getAdminMetrics();
+          if (active) setData(adminMetrics);
+          return;
+        }
+
+        if (user.role === 'business') {
+          const businessMetrics = await getBusinessMetrics(user);
+          if (active) setData(businessMetrics);
+          return;
+        }
+
+        if (user.role === 'student' || user.role === 'alumni') {
+          const postsSnap = await getDocs(query(collection(db, 'posts'), where('authorId', '==', user.id)));
+          const posts = postsSnap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+          const studentData = buildStudentData(user, posts);
+          if (active) setData(studentData);
+          return;
+        }
+
+        const fallbackPosts = await getDocs(query(collection(db, 'posts'), where('authorId', '==', user.id)));
+        const fallbackData = buildStudentData(user, fallbackPosts.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() })));
+        if (active) setData(fallbackData);
       } catch {
         if (active) setData(isDemo ? preview() : unavailableInsights());
       }
@@ -621,14 +472,7 @@ export default function InsightsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.eyebrow}>{role === 'admin' ? 'PLATFORM ANALYTICS' : role === 'business' ? 'RECRUITMENT ANALYTICS' : 'YOUR ANALYTICS'}</Text>
-            <Text style={styles.title}>{role === 'admin' ? 'Platform analytics' : role === 'business' ? 'Recruitment analytics' : 'Your analytics'}</Text>
-          </View>
-          <IconButton name="stats-chart-outline" />
-        </View>
-
+        <View style={styles.header}><View><Text style={styles.eyebrow}>{getRoleInsightsEyebrow(user.role)}</Text><Text style={styles.title}>Insights</Text></View><IconButton name="download-outline" /></View>
         <View style={styles.healthCard}>
           <ProgressRing percentage={data.ring?.percentage} size={94} strokeWidth={10} color={data.ring?.color || colors.lime} caption={data.ring?.caption} />
           <View style={styles.healthCopyWrap}>

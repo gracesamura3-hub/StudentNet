@@ -55,58 +55,26 @@ export function listenToPublishedAnnouncements(onData, onError) {
   return listenToCollection('announcements', [where('status', '==', 'published'), orderBy('createdAt', 'desc'), limit(12)], onData, onError);
 }
 
-export function listenToConnections(userId, onData, onError) {
+export async function createPost(user, body, attachments = []) {
   requireDb();
-  if (!userId) return () => {};
-  return onSnapshot(query(collection(db, 'connections'), where('participants', 'array-contains', userId)), snapshot => {
-    onData(snapshot.docs.map(item => ({ id: item.id, ...item.data() })));
-  }, onError);
-}
-
-async function uploadMediaAsset(uri, path, contentType) {
-  if (!storage) throw new Error('Firebase Storage is not configured for media uploads.');
-  const response = await fetch(uri);
-  if (!response.ok) throw new Error('The selected media could not be read for upload.');
-  const blob = await response.blob();
-  const uploaded = await uploadBytes(ref(storage, path), blob, { contentType });
-  return getDownloadURL(uploaded.ref);
-}
-
-export async function createPost(user, body, media = null) {
-  requireDb();
-  const currentUser = requireAuthenticatedUser();
-  const authorId = currentUser.uid;
-  const mediaUri = media?.videoUri || media?.uri;
-  const mediaPath = media?.type === 'video' ? `videos/${user.id}/${Date.now()}.mp4` : `attachments/${user.id}/${Date.now()}-${media?.name || 'file'}`;
-  const uploadedMediaUrl = mediaUri ? await uploadMediaAsset(mediaUri, mediaPath, media.mimeType || 'application/octet-stream') : null;
-  const mediaFields = mediaUri
-    ? {
-      type: media.type || 'attachment',
-      mediaType: media.type || 'attachment',
-      attachmentUrl: uploadedMediaUrl,
-      attachmentName: media.name || null,
-      attachmentMimeType: media.mimeType || null,
-      videoUrl: media.type === 'video' ? uploadedMediaUrl : null,
-      thumbnailUrl: media.thumbnailUri ? await uploadMediaAsset(media.thumbnailUri, `thumbnails/${user.id}/${Date.now()}.jpg`, 'image/jpeg') : null,
-      duration: media.duration || null,
-      width: media.width || null,
-      height: media.height || null,
-    }
-    : { type: 'text' };
+  const cleanBody = typeof body === 'string' ? body.trim() : '';
   return addDoc(collection(db, 'posts'), {
-    authorId,
-    author: user.name || currentUser.displayName || currentUser.email || 'StudentNet member',
-    authorName: user.name || currentUser.displayName || currentUser.email || 'StudentNet member',
-    authorRole: user.role || 'student',
-    authorAvatar: user.avatar || user.avatarUrl || '',
-    body: body.trim(),
-    content: body.trim(),
-    ...mediaFields,
-    likesCount: 0,
+    authorId: user.id,
+    author: user.name,
+    authorRole: user.role,
+    body: cleanBody,
+    type: attachments.length ? 'media' : 'text',
     reactions: 0,
     commentsCount: 0,
     commentCount: 0,
-    visibleTo: [...new Set([authorId, ...(user.connectionIds || [])])],
+    attachments: attachments.map(item => ({
+      id: item.id,
+      name: item.name,
+      uri: item.uploadedUrl || item.uri,
+      type: item.type,
+      size: item.size,
+    })),
+    visibleTo: [user.id, ...(user.connectionIds || [])],
     status: 'published',
     createdAt: serverTimestamp(),
   });

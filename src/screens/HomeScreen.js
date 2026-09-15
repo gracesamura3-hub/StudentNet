@@ -1,7 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
-import * as DocumentPicker from 'expo-document-picker';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -10,7 +8,7 @@ import { notifications as seedNotifications, posts as seedPosts, stories } from 
 import { useAuth } from '../context/AuthContext';
 import { createPost, listenToFeed, listenToPublishedAnnouncements, listenToPublishedEvents, toggleReaction } from '../firebase/dataService';
 import { colors, shadow } from '../theme';
-import { openWebFilePicker, preprocessVideo } from '../utils/mediaUtils';
+import { pickDocumentAsset, pickImageAsset, uploadMediaAsset } from '../utils/mediaUpload';
 
 const roleContent = {
   student: { eyebrow: 'YOUR NEXT STEP', title: '3 new roles match your skills', detail: 'Based on React Native, JavaScript and your BSc IT programme.', action: 'See my matches', icon: 'sparkles' },
@@ -27,9 +25,7 @@ export default function HomeScreen({ navigation }) {
   const [composerOpen, setComposerOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [draft, setDraft] = useState('');
-  const [attachedMedia, setAttachedMedia] = useState(null);
-  const [mediaError, setMediaError] = useState('');
-  const [publishing, setPublishing] = useState(false);
+  const [attachments, setAttachments] = useState([]);
   const banner = roleContent[user.role] || roleContent.student;
   const greeting = useMemo(() => new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening', []);
 
@@ -50,80 +46,42 @@ export default function HomeScreen({ navigation }) {
     return () => { stopFeed(); stopEvents(); stopAnnouncements(); };
   }, [isDemo, user.id]);
 
-  async function publishPost() {
-    if (!draft.trim() && !attachedMedia) return;
-    setPublishing(true);
-    setMediaError('');
-    try {
-      const body = draft.trim();
-      if (!isDemo) await createPost(user, body, attachedMedia);
-      const newPost = {
-        id: `local-${Date.now()}`, authorId: user.id, author: user.name, initials: user.initials,
-        role: user.headline, time: 'now', accent: colors.mint, body, tag: '#ProfessionalUpdate', reactions: 0, comments: 0,
-        type: attachedMedia?.type || 'text', mediaType: attachedMedia?.type || 'text', thumbnailUri: attachedMedia?.thumbnailUri || null, attachmentUri: attachedMedia?.uri || null, attachmentName: attachedMedia?.name || null,
+  const publishPost = useCallback(async () => {
+    if (!draft.trim() && !attachments.length) return;
+    const preparedAttachments = await Promise.all(attachments.map(async attachment => {
+      const uploaded = await uploadMediaAsset(attachment);
+      return {
+        ...uploaded,
+        uploadedUrl: uploaded.uploadedUrl || uploaded.uri,
       };
-      setFeed(current => [newPost, ...current]);
-      setDraft('');
-      setAttachedMedia(null);
-      setComposerOpen(false);
-    } catch (error) {
-      setMediaError(error.message || 'The post could not be published.');
-      Alert.alert('Post error', error.message || 'The post could not be published.');
-    } finally {
-      setPublishing(false);
-    }
-  }
+    }));
 
-  async function pickVideo() {
-    setMediaError('');
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (permission.status !== 'granted') {
-      setMediaError('Allow media library access to attach a video.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['videos'], allowsEditing: false, quality: 1 });
-    if (result.canceled || !result.assets?.[0]) return;
-    try {
-      const processed = await preprocessVideo(result.assets[0]);
-      setAttachedMedia({ ...processed, type: 'video', uri: processed.videoUri, name: result.assets[0].fileName || 'video.mp4', mimeType: result.assets[0].mimeType || 'video/mp4' });
-    } catch (error) {
-      setAttachedMedia(null);
-      setMediaError(error.message || 'The video could not be processed.');
-    }
-  }
+    const newPost = {
+      id: `local-${Date.now()}`, authorId: user.id, author: user.name, initials: user.initials,
+      role: user.headline, time: 'now', accent: colors.mint, body: draft.trim(), tag: '#ProfessionalUpdate', reactions: 0, comments: 0,
+      attachments: preparedAttachments,
+    };
+    setFeed(current => [newPost, ...current]);
+    setDraft('');
+    setAttachments([]);
+    setComposerOpen(false);
+    if (!isDemo) await createPost(user, newPost.body, preparedAttachments);
+  }, [attachments, draft, isDemo, user]);
 
-  async function pickImage() {
-    setMediaError('');
-    try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (permission.status !== 'granted') throw new Error('Allow media library access to attach an image.');
-      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, quality: 0.8 });
-      if (result.canceled || !result.assets?.[0]) return;
-      const asset = result.assets[0];
-      setAttachedMedia({ type: 'image', uri: asset.uri, name: asset.fileName || 'image.jpg', mimeType: asset.mimeType || 'image/jpeg', width: asset.width, height: asset.height });
-    } catch (error) {
-      if (Platform.OS === 'web' && openWebFilePicker({ accept: 'image/*', onFile: file => setAttachedMedia({ type: 'image', ...file }) })) return;
-      setMediaError(error.message || 'The image picker could not be opened.');
-    }
-  }
-
-  async function pickDocument() {
-    setMediaError('');
-    try {
-      const result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'], copyToCacheDirectory: true });
-      if (result.canceled || !result.assets?.[0]) return;
-      const asset = result.assets[0];
-      setAttachedMedia({ type: 'doc', uri: asset.uri, name: asset.name, mimeType: asset.mimeType || 'application/octet-stream', size: asset.size });
-    } catch (error) {
-      if (Platform.OS === 'web' && openWebFilePicker({ accept: '.pdf,.doc,.docx,.txt', onFile: file => setAttachedMedia({ type: 'doc', ...file }) })) return;
-      setMediaError(error.message || 'The document picker could not be opened.');
-    }
-  }
-
-  async function react(post) {
+  const react = useCallback(async post => {
     setFeed(current => current.map(item => item.id === post.id ? { ...item, reacted: !item.reacted, reactions: item.reactions + (item.reacted ? -1 : 1) } : item));
     if (!isDemo && !post.id.startsWith('local-')) await toggleReaction(post.id, user.id, post.reacted);
-  }
+  }, [isDemo, user.id]);
+
+  const addAttachment = useCallback(async type => {
+    try {
+      const asset = type === 'image' ? await pickImageAsset() : await pickDocumentAsset();
+      if (!asset) return;
+      setAttachments(current => [...current, asset]);
+    } catch (error) {
+      Alert.alert('Upload unavailable', error.message || 'Unable to access media right now.');
+    }
+  }, []);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -189,17 +147,17 @@ export default function HomeScreen({ navigation }) {
         {feed.map(post => <PostCard key={post.id} post={post} onReact={() => react(post)} />)}
       </ScrollView>
 
-      <ComposeModal visible={composerOpen} onClose={() => setComposerOpen(false)} user={user} draft={draft} setDraft={setDraft} publish={publishPost} publishing={publishing} attachedMedia={attachedMedia} pickImage={pickImage} pickVideo={pickVideo} pickDocument={pickDocument} clearMedia={() => setAttachedMedia(null)} error={mediaError} />
-      <NotificationsModal items={liveNotifications.length ? liveNotifications : seedNotifications} visible={notificationsOpen} onClose={() => setNotificationsOpen(false)} onRead={dismissNotification} />
+      <ComposeModal visible={composerOpen} onClose={() => setComposerOpen(false)} user={user} draft={draft} setDraft={setDraft} attachments={attachments} setAttachments={setAttachments} publish={publishPost} onAddAttachment={addAttachment} />
+      <NotificationsModal visible={notificationsOpen} onClose={() => setNotificationsOpen(false)} />
     </SafeAreaView>
   );
 }
 
-function QuickAction({ icon, label, tone, iconColor, onPress }) {
+const QuickAction = React.memo(function QuickAction({ icon, label, tone, iconColor, onPress }) {
   return <Pressable onPress={onPress} style={styles.quick}><View style={[styles.quickIcon, { backgroundColor: tone }]}><Ionicons name={icon} size={20} color={iconColor} /></View><Text style={styles.quickLabel}>{label}</Text></Pressable>;
-}
+});
 
-function PostCard({ post, onReact }) {
+const PostCard = React.memo(function PostCard({ post, onReact }) {
   return (
     <View style={styles.post}>
       <View style={styles.postHeader}>
@@ -218,27 +176,27 @@ function PostCard({ post, onReact }) {
       </View>
     </View>
   );
-}
+});
 
-function ComposeModal({ visible, onClose, user, draft, setDraft, publish, publishing, attachedMedia, pickImage, pickVideo, pickDocument, clearMedia, error }) {
+const ComposeModal = React.memo(function ComposeModal({ visible, onClose, user, draft, setDraft, publish, onAddAttachment, attachments = [], setAttachments }) {
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.modalPage}>
-        <View style={styles.modalHeader}><Pressable onPress={onClose}><Text style={styles.modalCancel}>Cancel</Text></Pressable><Text style={styles.modalTitle}>Create a post</Text><Pressable disabled={publishing} onPress={publish}><Text style={[styles.modalPublish, !draft.trim() && !attachedMedia && { opacity: 0.35 }]}>{publishing ? 'Posting…' : 'Post'}</Text></Pressable></View>
+        <View style={styles.modalHeader}><Pressable onPress={onClose}><Text style={styles.modalCancel}>Cancel</Text></Pressable><Text style={styles.modalTitle}>Create a post</Text><Pressable onPress={publish}><Text style={[styles.modalPublish, !draft.trim() && !attachments.length && { opacity: 0.35 }]}>Post</Text></Pressable></View>
         <View style={styles.composerIdentity}><Avatar initials={user.initials} color={colors.mint} /><View><Text style={styles.postAuthor}>{user.name}</Text><Pill icon="people-outline">Connections</Pill></View></View>
         <TextInput autoFocus multiline value={draft} onChangeText={setDraft} placeholder="Share an achievement, idea or career update…" placeholderTextColor={colors.subtle} style={styles.composerInput} />
-        {attachedMedia ? <View style={styles.videoAttachment}>{attachedMedia.type === 'image' || attachedMedia.type === 'video' ? <Image source={{ uri: attachedMedia.thumbnailUri || attachedMedia.uri }} style={styles.attachmentThumbnail} /> : <View style={styles.documentPreview}><Ionicons name="document-text" size={24} color={colors.green} /></View>}<View style={{ flex: 1 }}><Text style={styles.attachmentTitle}>{attachedMedia.type === 'video' ? 'Video ready' : attachedMedia.type === 'image' ? 'Image ready' : 'Document ready'}</Text><Text numberOfLines={1} style={styles.attachmentDetail}>{attachedMedia.name || 'Selected attachment'}</Text></View><Pressable onPress={clearMedia} hitSlop={8}><Ionicons name="close-circle" size={22} color={colors.coral} /></Pressable></View> : null}
-        {error ? <Text style={styles.mediaError}>{error}</Text> : null}
+        {attachments.length ? <View style={styles.attachmentRow}>{attachments.map(attachment => <View key={attachment.id} style={styles.attachmentCard}><Text numberOfLines={1} style={styles.attachmentName}>{attachment.name}</Text><Pressable onPress={() => setAttachments(current => current.filter(item => item.id !== attachment.id))}><Ionicons name="close-circle" size={16} color={colors.coral} /></Pressable></View>)}</View> : null}
         <View style={styles.composerTools}>
-          <IconButton name="image-outline" onPress={pickImage} /><IconButton name="videocam-outline" onPress={pickVideo} /><IconButton name="document-text-outline" onPress={pickDocument} />
+          <Pressable onPress={() => onAddAttachment('image')}><View style={styles.toolButton}><Ionicons name="image-outline" size={20} color={colors.green} /></View></Pressable>
+          <Pressable onPress={() => onAddAttachment('document')}><View style={styles.toolButton}><Ionicons name="document-text-outline" size={20} color={colors.green} /></View></Pressable>
           <View style={{ flex: 1 }} /><Text style={styles.characterCount}>{draft.length}/1,500</Text>
         </View>
       </SafeAreaView>
     </Modal>
   );
-}
+});
 
-function NotificationsModal({ items, visible, onClose, onRead }) {
+const NotificationsModal = React.memo(function NotificationsModal({ visible, onClose }) {
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.modalPage}>
@@ -255,7 +213,7 @@ function NotificationsModal({ items, visible, onClose, onRead }) {
       </SafeAreaView>
     </Modal>
   );
-}
+});
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.cream },
@@ -321,6 +279,10 @@ const styles = StyleSheet.create({
   composerInput: { minHeight: 190, paddingHorizontal: 20, color: colors.ink, fontSize: 18, lineHeight: 27, textAlignVertical: 'top' },
   videoAttachment: { flexDirection: 'row', gap: 10, alignItems: 'center', marginHorizontal: 20, padding: 10, borderRadius: 15, backgroundColor: colors.mint }, attachmentThumbnail: { width: 58, height: 48, borderRadius: 10 }, documentPreview: { width: 58, height: 48, borderRadius: 10, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' }, attachmentTitle: { color: colors.forest, fontSize: 11, fontWeight: '900' }, attachmentDetail: { color: colors.green, fontSize: 9, marginTop: 3 }, mediaError: { color: colors.coral, fontSize: 10, lineHeight: 15, marginHorizontal: 20, marginTop: 10 },
   composerTools: { flexDirection: 'row', gap: 10, padding: 20, borderTopWidth: 1, borderTopColor: colors.line, alignItems: 'center' },
+  toolButton: { width: 40, height: 40, borderRadius: 13, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center' },
+  attachmentRow: { paddingHorizontal: 20, marginBottom: 10, gap: 8 },
+  attachmentCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, borderRadius: 12, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 12, paddingVertical: 9 },
+  attachmentName: { color: colors.ink, fontSize: 10, fontWeight: '700', flex: 1 },
   characterCount: { color: colors.subtle, fontSize: 10 },
   notificationList: { padding: 20 },
   notificationEyebrow: { color: colors.green, fontSize: 10, fontWeight: '900', letterSpacing: 1.5, marginBottom: 9 },
