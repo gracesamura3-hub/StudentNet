@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,6 +8,7 @@ import { notifications, posts as seedPosts, stories } from '../data/demoData';
 import { useAuth } from '../context/AuthContext';
 import { createPost, listenToFeed, listenToPublishedAnnouncements, listenToPublishedEvents, toggleReaction } from '../firebase/dataService';
 import { colors, shadow } from '../theme';
+import { pickDocumentAsset, pickImageAsset, uploadMediaAsset } from '../utils/mediaUpload';
 
 const roleContent = {
   student: { eyebrow: 'YOUR NEXT STEP', title: '3 new roles match your skills', detail: 'Based on React Native, JavaScript and your BSc IT programme.', action: 'See my matches', icon: 'sparkles' },
@@ -24,6 +25,7 @@ export default function HomeScreen({ navigation }) {
   const [composerOpen, setComposerOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [draft, setDraft] = useState('');
+  const [attachments, setAttachments] = useState([]);
   const banner = roleContent[user.role] || roleContent.student;
   const greeting = useMemo(() => new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening', []);
 
@@ -44,22 +46,42 @@ export default function HomeScreen({ navigation }) {
     return () => { stopFeed(); stopEvents(); stopAnnouncements(); };
   }, [isDemo, user.id]);
 
-  async function publishPost() {
-    if (!draft.trim()) return;
+  const publishPost = useCallback(async () => {
+    if (!draft.trim() && !attachments.length) return;
+    const preparedAttachments = await Promise.all(attachments.map(async attachment => {
+      const uploaded = await uploadMediaAsset(attachment);
+      return {
+        ...uploaded,
+        uploadedUrl: uploaded.uploadedUrl || uploaded.uri,
+      };
+    }));
+
     const newPost = {
       id: `local-${Date.now()}`, authorId: user.id, author: user.name, initials: user.initials,
       role: user.headline, time: 'now', accent: colors.mint, body: draft.trim(), tag: '#ProfessionalUpdate', reactions: 0, comments: 0,
+      attachments: preparedAttachments,
     };
     setFeed(current => [newPost, ...current]);
     setDraft('');
+    setAttachments([]);
     setComposerOpen(false);
-    if (!isDemo) await createPost(user, newPost.body);
-  }
+    if (!isDemo) await createPost(user, newPost.body, preparedAttachments);
+  }, [attachments, draft, isDemo, user]);
 
-  async function react(post) {
+  const react = useCallback(async post => {
     setFeed(current => current.map(item => item.id === post.id ? { ...item, reacted: !item.reacted, reactions: item.reactions + (item.reacted ? -1 : 1) } : item));
     if (!isDemo && !post.id.startsWith('local-')) await toggleReaction(post.id, user.id, post.reacted);
-  }
+  }, [isDemo, user.id]);
+
+  const addAttachment = useCallback(async type => {
+    try {
+      const asset = type === 'image' ? await pickImageAsset() : await pickDocumentAsset();
+      if (!asset) return;
+      setAttachments(current => [...current, asset]);
+    } catch (error) {
+      Alert.alert('Upload unavailable', error.message || 'Unable to access media right now.');
+    }
+  }, []);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -125,17 +147,17 @@ export default function HomeScreen({ navigation }) {
         {feed.map(post => <PostCard key={post.id} post={post} onReact={() => react(post)} />)}
       </ScrollView>
 
-      <ComposeModal visible={composerOpen} onClose={() => setComposerOpen(false)} user={user} draft={draft} setDraft={setDraft} publish={publishPost} />
+      <ComposeModal visible={composerOpen} onClose={() => setComposerOpen(false)} user={user} draft={draft} setDraft={setDraft} attachments={attachments} setAttachments={setAttachments} publish={publishPost} onAddAttachment={addAttachment} />
       <NotificationsModal visible={notificationsOpen} onClose={() => setNotificationsOpen(false)} />
     </SafeAreaView>
   );
 }
 
-function QuickAction({ icon, label, tone, iconColor, onPress }) {
+const QuickAction = React.memo(function QuickAction({ icon, label, tone, iconColor, onPress }) {
   return <Pressable onPress={onPress} style={styles.quick}><View style={[styles.quickIcon, { backgroundColor: tone }]}><Ionicons name={icon} size={20} color={iconColor} /></View><Text style={styles.quickLabel}>{label}</Text></Pressable>;
-}
+});
 
-function PostCard({ post, onReact }) {
+const PostCard = React.memo(function PostCard({ post, onReact }) {
   return (
     <View style={styles.post}>
       <View style={styles.postHeader}>
@@ -153,25 +175,27 @@ function PostCard({ post, onReact }) {
       </View>
     </View>
   );
-}
+});
 
-function ComposeModal({ visible, onClose, user, draft, setDraft, publish }) {
+const ComposeModal = React.memo(function ComposeModal({ visible, onClose, user, draft, setDraft, publish, onAddAttachment, attachments = [], setAttachments }) {
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.modalPage}>
-        <View style={styles.modalHeader}><Pressable onPress={onClose}><Text style={styles.modalCancel}>Cancel</Text></Pressable><Text style={styles.modalTitle}>Create a post</Text><Pressable onPress={publish}><Text style={[styles.modalPublish, !draft.trim() && { opacity: 0.35 }]}>Post</Text></Pressable></View>
+        <View style={styles.modalHeader}><Pressable onPress={onClose}><Text style={styles.modalCancel}>Cancel</Text></Pressable><Text style={styles.modalTitle}>Create a post</Text><Pressable onPress={publish}><Text style={[styles.modalPublish, !draft.trim() && !attachments.length && { opacity: 0.35 }]}>Post</Text></Pressable></View>
         <View style={styles.composerIdentity}><Avatar initials={user.initials} color={colors.mint} /><View><Text style={styles.postAuthor}>{user.name}</Text><Pill icon="people-outline">Connections</Pill></View></View>
         <TextInput autoFocus multiline value={draft} onChangeText={setDraft} placeholder="Share an achievement, idea or career update…" placeholderTextColor={colors.subtle} style={styles.composerInput} />
+        {attachments.length ? <View style={styles.attachmentRow}>{attachments.map(attachment => <View key={attachment.id} style={styles.attachmentCard}><Text numberOfLines={1} style={styles.attachmentName}>{attachment.name}</Text><Pressable onPress={() => setAttachments(current => current.filter(item => item.id !== attachment.id))}><Ionicons name="close-circle" size={16} color={colors.coral} /></Pressable></View>)}</View> : null}
         <View style={styles.composerTools}>
-          <IconButton name="image-outline" /><IconButton name="videocam-outline" /><IconButton name="document-text-outline" />
+          <Pressable onPress={() => onAddAttachment('image')}><View style={styles.toolButton}><Ionicons name="image-outline" size={20} color={colors.green} /></View></Pressable>
+          <Pressable onPress={() => onAddAttachment('document')}><View style={styles.toolButton}><Ionicons name="document-text-outline" size={20} color={colors.green} /></View></Pressable>
           <View style={{ flex: 1 }} /><Text style={styles.characterCount}>{draft.length}/1,500</Text>
         </View>
       </SafeAreaView>
     </Modal>
   );
-}
+});
 
-function NotificationsModal({ visible, onClose }) {
+const NotificationsModal = React.memo(function NotificationsModal({ visible, onClose }) {
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.modalPage}>
@@ -188,7 +212,7 @@ function NotificationsModal({ visible, onClose }) {
       </SafeAreaView>
     </Modal>
   );
-}
+});
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.cream },
@@ -251,6 +275,10 @@ const styles = StyleSheet.create({
   composerIdentity: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 20 },
   composerInput: { minHeight: 190, paddingHorizontal: 20, color: colors.ink, fontSize: 18, lineHeight: 27, textAlignVertical: 'top' },
   composerTools: { flexDirection: 'row', gap: 10, padding: 20, borderTopWidth: 1, borderTopColor: colors.line, alignItems: 'center' },
+  toolButton: { width: 40, height: 40, borderRadius: 13, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center' },
+  attachmentRow: { paddingHorizontal: 20, marginBottom: 10, gap: 8 },
+  attachmentCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, borderRadius: 12, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 12, paddingVertical: 9 },
+  attachmentName: { color: colors.ink, fontSize: 10, fontWeight: '700', flex: 1 },
   characterCount: { color: colors.subtle, fontSize: 10 },
   notificationList: { padding: 20 },
   notificationEyebrow: { color: colors.green, fontSize: 10, fontWeight: '900', letterSpacing: 1.5, marginBottom: 9 },

@@ -41,16 +41,24 @@ export function listenToPublishedAnnouncements(onData, onError) {
   return listenToCollection('announcements', [where('status', '==', 'published'), orderBy('createdAt', 'desc'), limit(12)], onData, onError);
 }
 
-export async function createPost(user, body) {
+export async function createPost(user, body, attachments = []) {
   requireDb();
+  const cleanBody = typeof body === 'string' ? body.trim() : '';
   return addDoc(collection(db, 'posts'), {
     authorId: user.id,
     author: user.name,
     authorRole: user.role,
-    body: body.trim(),
-    type: 'text',
+    body: cleanBody,
+    type: attachments.length ? 'media' : 'text',
     reactions: 0,
     commentCount: 0,
+    attachments: attachments.map(item => ({
+      id: item.id,
+      name: item.name,
+      uri: item.uploadedUrl || item.uri,
+      type: item.type,
+      size: item.size,
+    })),
     visibleTo: [user.id, ...(user.connectionIds || [])],
     status: 'published',
     createdAt: serverTimestamp(),

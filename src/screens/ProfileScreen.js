@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Avatar, IconButton, PrimaryButton, SectionHeader } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { buildAssistantReply, buildContextualNiaTip } from '../utils/profileAi';
+import { shouldShowInsightsOnProfile } from '../utils/insightsUtils';
 import { colors } from '../theme';
 
 const portfolio = [
@@ -18,7 +19,7 @@ const experience = [
   { id: '2', title: 'Student Ambassador', organisation: 'Richfield', dates: '2024 – present', icon: 'ribbon-outline' },
 ];
 
-export default function ProfileScreen() {
+export default function ProfileScreen({ navigation }) {
   const { user, isDemo, changeDemoRole, signOut } = useAuth();
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [rolesOpen, setRolesOpen] = useState(false);
@@ -62,6 +63,18 @@ export default function ProfileScreen() {
           <View style={{ flex: 1 }}><Text style={styles.coachEyebrow}>AI PROFILE COACH</Text><Text style={styles.coachTitle}>Your profile is {safeUser.completion}% complete</Text><Text style={styles.coachCopy}>{niaTip}</Text></View>
           <View style={styles.progressCircle}><Text style={styles.progressText}>{safeUser.completion}%</Text></View>
         </Pressable>
+
+        {shouldShowInsightsOnProfile(safeUser.role) ? (
+          <Pressable onPress={() => navigation.navigate('Insights')} style={styles.insightsCard}>
+            <View style={styles.insightsIcon}><Ionicons name="stats-chart-outline" size={22} color={colors.green} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.insightsEyebrow}>MY INSIGHTS</Text>
+              <Text style={styles.insightsTitle}>{safeUser.role === 'alumni' ? 'Your alumni impact' : 'Your student momentum'}</Text>
+              <Text style={styles.insightsCopy}>Track profile views, engagement and network growth.</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.green} />
+          </Pressable>
+        ) : null}
 
         <View style={styles.visibilityRow}><Ionicons name={visibility === 'Public' ? 'globe-outline' : 'people-outline'} size={16} color={colors.green} /><Text style={styles.visibilityText}>Viewing as: <Text style={styles.visibilityStrong}>{visibility}</Text></Text><Pressable onPress={() => setVisibility(visibility === 'Connections' ? 'Public' : 'Connections')}><Text style={styles.visibilityAction}>Change</Text></Pressable></View>
 
@@ -169,7 +182,12 @@ const styles = StyleSheet.create({
   coachIcon: { width: 44, height: 44, borderRadius: 15, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
   coachEyebrow: { color: colors.green, fontSize: 7, letterSpacing: 1.2, fontWeight: '900' }, coachTitle: { color: colors.forest, fontSize: 12, fontWeight: '900', marginTop: 3 }, coachCopy: { color: '#4A704E', fontSize: 8, marginTop: 3 },
   progressCircle: { width: 43, height: 43, borderRadius: 22, borderWidth: 5, borderColor: colors.green, alignItems: 'center', justifyContent: 'center' }, progressText: { color: colors.forest, fontSize: 9, fontWeight: '900' },
-  visibilityRow: { marginHorizontal: 18, paddingHorizontal: 13, height: 42, borderRadius: 14, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  insightsCard: { marginHorizontal: 18, marginTop: 18, borderRadius: 22, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  insightsIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.goldPale, alignItems: 'center', justifyContent: 'center' },
+  insightsEyebrow: { color: colors.green, fontSize: 8, fontWeight: '900', letterSpacing: 1.2 },
+  insightsTitle: { color: colors.ink, fontSize: 12, fontWeight: '900', marginTop: 3 },
+  insightsCopy: { color: colors.muted, fontSize: 8, marginTop: 4 },
+  visibilityRow: { marginHorizontal: 18, marginTop: 11, paddingHorizontal: 13, height: 42, borderRadius: 14, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, flexDirection: 'row', alignItems: 'center', gap: 8 },
   visibilityText: { color: colors.muted, fontSize: 9, flex: 1 }, visibilityStrong: { color: colors.ink, fontWeight: '800' }, visibilityAction: { color: colors.green, fontSize: 9, fontWeight: '900' },
   section: { marginHorizontal: 18, marginTop: 27 }, sectionCard: { borderRadius: 22, padding: 16, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line },
   about: { color: colors.muted, fontSize: 11, lineHeight: 18 }, infoLine: { flexDirection: 'row', gap: 11, marginTop: 17, paddingTop: 14, borderTopWidth: 1, borderTopColor: colors.line }, infoTitle: { color: colors.ink, fontSize: 11, fontWeight: '800' }, infoDetail: { color: colors.muted, fontSize: 8, marginTop: 3 },
