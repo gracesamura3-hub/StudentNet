@@ -1,16 +1,34 @@
-import React, { useState } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Avatar, IconButton, Pill } from '../components/ui';
 import { conversations } from '../data/demoData';
 import { useAuth } from '../context/AuthContext';
-import { sendMessage } from '../firebase/dataService';
+import { listenToConversations, listenToMessages, sendMessage } from '../firebase/dataService';
 import { colors } from '../theme';
 
 export default function InboxScreen() {
+  const { user, isDemo } = useAuth();
   const [selected, setSelected] = useState(null);
   const [filter, setFilter] = useState('All');
+  const [liveConversations, setLiveConversations] = useState([]);
+
+  useEffect(() => {
+    if (isDemo || !user?.id) return undefined;
+    return listenToConversations(user.id, setLiveConversations, error => Alert.alert('Inbox error', error.message || 'Conversations are unavailable.'));
+  }, [isDemo, user?.id]);
+
+  const conversationItems = liveConversations.length ? liveConversations.map(item => ({
+    ...item,
+    name: item.name || 'StudentNet connection',
+    initials: item.initials || 'SN',
+    text: item.lastMessage || 'Start a conversation',
+    time: 'recent',
+    unread: 0,
+    color: colors.mint,
+    online: false,
+  })) : conversations;
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}><View><Text style={styles.eyebrow}>STAY CONNECTED</Text><Text style={styles.title}>Messages</Text></View><IconButton name="create-outline" /></View>
@@ -19,7 +37,7 @@ export default function InboxScreen() {
       <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
         <View style={styles.requests}><View style={styles.requestIcon}><Ionicons name="mail-unread-outline" size={20} color={colors.green} /></View><View style={{ flex: 1 }}><Text style={styles.requestTitle}>Message requests</Text><Text style={styles.requestCopy}>2 people outside your network</Text></View><View style={styles.requestCount}><Text style={styles.requestCountText}>2</Text></View><Ionicons name="chevron-forward" size={17} color={colors.subtle} /></View>
         <Text style={styles.listEyebrow}>RECENT</Text>
-        {conversations.map(item => (
+        {conversationItems.map(item => (
           <Pressable key={item.id} onPress={() => setSelected(item)} style={styles.conversation}>
             <Avatar initials={item.initials} color={item.color} size={53} online={item.online} />
             <View style={styles.conversationCopy}><Text style={styles.conversationName}>{item.name}</Text><Text numberOfLines={1} style={[styles.conversationText, item.unread && styles.unreadText]}>{item.text}</Text></View>
@@ -40,13 +58,24 @@ function ConversationModal({ conversation, onClose }) {
     { id: '2', mine: false, text: conversation?.text || '', time: '09:42' },
     { id: '3', mine: true, text: 'Thank you — I would really appreciate that!', time: '09:44' },
   ]);
+  useEffect(() => {
+    if (!conversation || isDemo || !conversation.id || !conversation.participants) return undefined;
+    return listenToMessages(conversation.id, items => setMessages(items.map(item => ({ ...item, mine: item.senderId === user.id, time: item.createdAt?.toDate?.()?.toLocaleTimeString?.([], { hour: '2-digit', minute: '2-digit' }) || 'now' }))), error => Alert.alert('Message error', error.message || 'Messages are unavailable.'));
+  }, [conversation, isDemo, user.id]);
   if (!conversation) return null;
   async function submit() {
     if (!draft.trim()) return;
     const text = draft.trim();
-    setMessages(current => [...current, { id: `${Date.now()}`, mine: true, text, time: 'now' }]);
-    setDraft('');
-    if (!isDemo) await sendMessage(conversation.id, user.id, [conversation.id], text);
+    try {
+      if (!isDemo) {
+        const recipientIds = conversation.participants?.filter(id => id !== user.id) || [conversation.recipientId];
+        await sendMessage(conversation.id, user.id, recipientIds, text);
+      }
+      setMessages(current => [...current, { id: `${Date.now()}`, mine: true, text, time: 'now' }]);
+      setDraft('');
+    } catch (error) {
+      Alert.alert('Message error', error.message || 'The message could not be sent.');
+    }
   }
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>

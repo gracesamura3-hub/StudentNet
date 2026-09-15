@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -23,22 +23,112 @@ export default function ProfileScreen({ navigation }) {
   const { user, isDemo, changeDemoRole, signOut } = useAuth();
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [rolesOpen, setRolesOpen] = useState(false);
+  const [recommendationOpen, setRecommendationOpen] = useState(false);
   const [visibility, setVisibility] = useState('Connections');
+  const [endorsements, setEndorsements] = useState({});
+  const [recommendations, setRecommendations] = useState([]);
+  const [profileError, setProfileError] = useState('');
+  const [endorsementBusy, setEndorsementBusy] = useState('');
+  const [recommendationBusy, setRecommendationBusy] = useState(false);
+  const [extractorOpen, setExtractorOpen] = useState(false);
+  const [extractorText, setExtractorText] = useState('');
+  const [extractedSkills, setExtractedSkills] = useState([]);
+  const [selectedExtractedSkills, setSelectedExtractedSkills] = useState([]);
+  const [extractorBusy, setExtractorBusy] = useState(false);
+  const viewedUser = route?.params?.profile || user;
+  const isOwnProfile = viewedUser?.id === user?.id;
   const safeUser = useMemo(() => ({
-    id: user?.id || 'loading-user',
-    firstName: user?.firstName || 'Student',
-    lastName: user?.lastName || 'Member',
-    name: user?.name || `${user?.firstName || 'Student'} ${user?.lastName || 'Member'}`.trim() || 'Student profile',
-    initials: user?.initials || 'SN',
-    headline: user?.headline || 'Richfield community member',
-    programme: user?.programme || 'Richfield community',
-    campus: user?.campus || 'Richfield community',
-    year: user?.year || 'Student',
-    completion: Number(user?.completion) || 25,
-    role: user?.role || 'student',
-    skills: Array.isArray(user?.skills) ? user.skills : [],
-  }), [user]);
+    id: viewedUser?.id || 'loading-user',
+    firstName: viewedUser?.firstName || 'Student',
+    lastName: viewedUser?.lastName || 'Member',
+    name: viewedUser?.name || `${viewedUser?.firstName || 'Student'} ${viewedUser?.lastName || 'Member'}`.trim() || 'Student profile',
+    initials: viewedUser?.initials || 'SN',
+    headline: viewedUser?.headline || 'Richfield community member',
+    programme: viewedUser?.programme || 'Richfield community',
+    campus: viewedUser?.campus || 'Richfield community',
+    year: viewedUser?.year || 'Student',
+    completion: Number(viewedUser?.completion) || 25,
+    role: viewedUser?.role || 'student',
+    skills: Array.isArray(viewedUser?.skills) ? viewedUser.skills : [],
+  }), [viewedUser]);
   const niaTip = useMemo(() => buildContextualNiaTip(safeUser), [safeUser]);
+
+  useEffect(() => {
+    if (!safeUser.id || isDemo || !configured) return undefined;
+    let active = true;
+    Promise.all([getSkillEndorsements(safeUser.id), getRecommendations(safeUser.id)])
+      .then(([skillData, recommendationData]) => {
+        if (!active) return;
+        setEndorsements(skillData);
+        setRecommendations(recommendationData);
+      })
+      .catch(error => { if (active) setProfileError(error.message || 'Profile endorsements and recommendations are unavailable.'); });
+    return () => { active = false; };
+  }, [configured, isDemo, safeUser.id]);
+
+  async function handleEndorsement(skill) {
+    if (isDemo || !configured || endorsementBusy) return;
+    setEndorsementBusy(skill);
+    setProfileError('');
+    try {
+      await endorseSkill(safeUser.id, skill);
+      const next = await getSkillEndorsements(safeUser.id);
+      setEndorsements(next);
+    } catch (error) {
+      setProfileError(error.message || 'We could not update that endorsement.');
+    } finally {
+      setEndorsementBusy('');
+    }
+  }
+
+  async function handleRecommendation(text) {
+    if (isDemo || !configured) return;
+    setRecommendationBusy(true);
+    setProfileError('');
+    try {
+      await addRecommendation(safeUser.id, text);
+      setRecommendationOpen(false);
+      setProfileError('Recommendation submitted for review.');
+    } catch (error) {
+      setProfileError(error.message || 'We could not submit that recommendation.');
+    } finally {
+      setRecommendationBusy(false);
+    }
+  }
+
+  async function extractProfileSkills() {
+    if (!extractorText.trim()) return;
+    setExtractorBusy(true);
+    setProfileError('');
+    try {
+      const suggestions = await extractSkillsAndQualifications(extractorText);
+      setExtractedSkills(suggestions);
+      setSelectedExtractedSkills(suggestions);
+      if (!suggestions.length) setProfileError('No recognised skills or qualifications were found. Try adding more CV or project detail.');
+    } catch (error) {
+      setProfileError(error.message || 'We could not extract skills from that text.');
+    } finally {
+      setExtractorBusy(false);
+    }
+  }
+
+  async function saveExtractedSkills() {
+    if (!selectedExtractedSkills.length || isDemo || !configured) return;
+    setExtractorBusy(true);
+    setProfileError('');
+    try {
+      await updateUserSkills(safeUser.id, [...safeUser.skills, ...selectedExtractedSkills]);
+      setExtractorOpen(false);
+      setExtractorText('');
+      setExtractedSkills([]);
+      setSelectedExtractedSkills([]);
+      setProfileError('Selected skills were added to your profile.');
+    } catch (error) {
+      setProfileError(error.message || 'We could not save those skills.');
+    } finally {
+      setExtractorBusy(false);
+    }
+  }
 
   if (!user || !user.id) {
     return <SafeAreaView style={styles.safe} edges={['top']}><View style={styles.content}><Text style={styles.name}>Loading profile…</Text></View></SafeAreaView>;
@@ -86,7 +176,17 @@ export default function ProfileScreen({ navigation }) {
         </ProfileSection>
 
         <ProfileSection title="Skills & endorsements" action="Add skill">
-          <View style={styles.skills}>{safeUser.skills.map((skill, index) => <View key={skill} style={styles.skill}><Text style={styles.skillName}>{skill}</Text><View style={styles.endorsements}><Ionicons name="people" size={11} color={colors.green} /><Text style={styles.endorsementText}>{14 - index * 2}</Text></View></View>)}</View>
+          {safeUser.role === 'student' && !isDemo ? <Pressable onPress={() => setExtractorOpen(true)} style={styles.extractButton}><Ionicons name="sparkles-outline" size={16} color={colors.green} /><Text style={styles.extractButtonText}>Extract skills from bio or CV</Text></Pressable> : null}
+          <View style={styles.skills}>{safeUser.skills.map((skill, index) => {
+            const endorsement = endorsements[skill];
+            const fallbackCount = 14 - index * 2;
+            return <Pressable key={skill} onPress={() => handleEndorsement(skill)} disabled={Boolean(endorsementBusy)} style={[styles.skill, endorsement?.endorsed && styles.skillEndorsed]}><Text style={styles.skillName}>{skill}</Text><View style={styles.endorsements}><Ionicons name={endorsement?.endorsed ? 'checkmark-circle' : 'people'} size={11} color={colors.green} /><Text style={styles.endorsementText}>{endorsement?.count ?? (isDemo ? fallbackCount : 0)} {endorsementBusy === skill ? '…' : '+1'}</Text></View></Pressable>;
+          })}</View>
+        </ProfileSection>
+
+        <ProfileSection title="Recommendations & testimonials" action={!isOwnProfile ? 'Write recommendation' : undefined}>
+          {recommendations.length ? recommendations.map(item => <View key={item.id} style={styles.recommendation}><View style={styles.recommendationIcon}><Ionicons name="chatbubble-ellipses" size={18} color={colors.green} /></View><View style={{ flex: 1 }}><Text style={styles.recommendationText}>{item.text}</Text><Text style={styles.recommendationAuthor}>{item.authorName} · {item.authorRole}</Text></View></View>) : <Text style={styles.emptyRecommendation}>Verified recommendations from accepted connections will appear here.</Text>}
+          {!isOwnProfile && !isDemo ? <Pressable onPress={() => setRecommendationOpen(true)} style={styles.recommendationAction}><Ionicons name="create-outline" size={16} color={colors.green} /><Text style={styles.recommendationActionText}>Write a recommendation</Text></Pressable> : null}
         </ProfileSection>
 
         <ProfileSection title="Featured projects" action="See all">
@@ -105,14 +205,34 @@ export default function ProfileScreen({ navigation }) {
         {isDemo ? <View style={styles.demoPanel}><Text style={styles.demoTitle}>Role preview</Text><Text style={styles.demoCopy}>Switch persona to inspect role-based content and analytics.</Text><Pressable onPress={() => setRolesOpen(true)} style={styles.roleSwitcher}><Text style={styles.roleSwitcherText}>{user.role[0].toUpperCase() + user.role.slice(1)} experience</Text><Ionicons name="chevron-down" size={16} color={colors.green} /></Pressable></View> : null}
         <Pressable onPress={signOut} style={styles.signOut}><Ionicons name="log-out-outline" size={18} color={colors.coral} /><Text style={styles.signOutText}>{isDemo ? 'Exit interactive preview' : 'Sign out'}</Text></Pressable>
       </ScrollView>
-      <AssistantModal visible={assistantOpen} onClose={() => setAssistantOpen(false)} user={user} />
+      <AssistantModal visible={assistantOpen} onClose={() => setAssistantOpen(false)} user={viewedUser} />
       <RoleModal visible={rolesOpen} onClose={() => setRolesOpen(false)} onSelect={role => { changeDemoRole(role); setRolesOpen(false); }} current={user.role} />
+      <RecommendationModal visible={recommendationOpen} busy={recommendationBusy} onClose={() => setRecommendationOpen(false)} onSubmit={handleRecommendation} />
+      <SkillExtractorModal visible={extractorOpen} busy={extractorBusy} text={extractorText} setText={setExtractorText} suggestions={extractedSkills} selected={selectedExtractedSkills} setSelected={setSelectedExtractedSkills} onExtract={extractProfileSkills} onSave={saveExtractedSkills} onClose={() => setExtractorOpen(false)} />
+      {profileError ? <View style={styles.profileNotice}><Text style={styles.profileNoticeText}>{profileError}</Text></View> : null}
     </SafeAreaView>
   );
 }
 
 function ProfileSection({ title, action, children }) {
   return <View style={styles.section}><SectionHeader title={title} action={action} /><View style={styles.sectionCard}>{children}</View></View>;
+}
+
+function RecommendationModal({ visible, busy, onClose, onSubmit }) {
+  const [text, setText] = useState('');
+  function submit() {
+    if (!text.trim() || busy) return;
+    onSubmit(text.trim());
+    setText('');
+  }
+  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}><View style={styles.overlay}><View style={styles.recommendationSheet}><View style={styles.modalHeader}><Text style={styles.modalTitle}>Write a recommendation</Text><IconButton name="close" onPress={onClose} size={36} /></View><Text style={styles.modalCopy}>Share a specific strength or experience from working together.</Text><TextInput multiline maxLength={600} value={text} onChangeText={setText} placeholder="What would you recommend them for?" placeholderTextColor={colors.subtle} style={styles.recommendationInput} /><PrimaryButton disabled={!text.trim() || busy} onPress={submit}>{busy ? 'Submitting…' : 'Submit for review'}</PrimaryButton></View></View></Modal>;
+}
+
+function SkillExtractorModal({ visible, busy, text, setText, suggestions, selected, setSelected, onExtract, onSave, onClose }) {
+  function toggleSkill(skill) {
+    setSelected(current => current.includes(skill) ? current.filter(item => item !== skill) : [...current, skill]);
+  }
+  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}><View style={styles.overlay}><View style={styles.recommendationSheet}><View style={styles.modalHeader}><Text style={styles.modalTitle}>Extract profile skills</Text><IconButton name="close" onPress={onClose} size={36} /></View><Text style={styles.modalCopy}>Paste a bio, CV excerpt, or project description and we will suggest profile skills and qualifications.</Text><TextInput multiline value={text} onChangeText={setText} placeholder="Paste your text here…" placeholderTextColor={colors.subtle} style={styles.recommendationInput} /><PrimaryButton disabled={!text.trim() || busy} onPress={onExtract} icon="sparkles-outline">{busy ? 'Scanning…' : 'Extract suggestions'}</PrimaryButton>{suggestions.length ? <><Text style={styles.extractHeading}>Select what to add</Text><View style={styles.extractedSkills}>{suggestions.map(skill => <Pressable key={skill} onPress={() => toggleSkill(skill)} style={[styles.extractedSkill, selected.includes(skill) && styles.extractedSkillSelected]}><Ionicons name={selected.includes(skill) ? 'checkmark-circle' : 'add-circle-outline'} size={15} color={selected.includes(skill) ? colors.forest : colors.green} /><Text style={styles.extractedSkillText}>{skill}</Text></Pressable>)}</View><PrimaryButton disabled={!selected.length || busy} onPress={onSave}>{busy ? 'Saving…' : `Add ${selected.length} to profile`}</PrimaryButton></> : null}</View></View></Modal>;
 }
 
 function AssistantModal({ visible, onClose, user }) {
@@ -192,7 +312,9 @@ const styles = StyleSheet.create({
   section: { marginHorizontal: 18, marginTop: 27 }, sectionCard: { borderRadius: 22, padding: 16, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line },
   about: { color: colors.muted, fontSize: 11, lineHeight: 18 }, infoLine: { flexDirection: 'row', gap: 11, marginTop: 17, paddingTop: 14, borderTopWidth: 1, borderTopColor: colors.line }, infoTitle: { color: colors.ink, fontSize: 11, fontWeight: '800' }, infoDetail: { color: colors.muted, fontSize: 8, marginTop: 3 },
   linkRow: { flexDirection: 'row', gap: 8, alignItems: 'center', marginTop: 13 }, linkText: { color: colors.green, fontSize: 9, fontWeight: '700', flex: 1 },
-  skills: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, skill: { flexDirection: 'row', gap: 8, alignItems: 'center', backgroundColor: colors.mint, borderRadius: 13, paddingHorizontal: 11, paddingVertical: 9 }, skillName: { color: colors.forest, fontSize: 10, fontWeight: '800' }, endorsements: { flexDirection: 'row', gap: 3 }, endorsementText: { color: colors.green, fontSize: 8, fontWeight: '900' },
+  extractButton: { flexDirection: 'row', gap: 7, alignItems: 'center', backgroundColor: colors.lime, borderRadius: 13, paddingHorizontal: 11, paddingVertical: 9, marginBottom: 11 }, extractButtonText: { color: colors.forest, fontSize: 10, fontWeight: '900' }, skills: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, skill: { flexDirection: 'row', gap: 8, alignItems: 'center', backgroundColor: colors.mint, borderRadius: 13, paddingHorizontal: 11, paddingVertical: 9 }, skillEndorsed: { backgroundColor: colors.lime }, skillName: { color: colors.forest, fontSize: 10, fontWeight: '800' }, endorsements: { flexDirection: 'row', gap: 3 }, endorsementText: { color: colors.green, fontSize: 8, fontWeight: '900' },
+  extractHeading: { color: colors.ink, fontSize: 12, fontWeight: '900', marginTop: 4 }, extractedSkills: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 }, extractedSkill: { flexDirection: 'row', gap: 5, alignItems: 'center', paddingHorizontal: 9, paddingVertical: 8, borderRadius: 12, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.cream }, extractedSkillSelected: { backgroundColor: colors.lime, borderColor: colors.lime }, extractedSkillText: { color: colors.ink, fontSize: 9, fontWeight: '800' },
+  recommendation: { flexDirection: 'row', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.line }, recommendationIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.mint, alignItems: 'center', justifyContent: 'center' }, recommendationText: { color: colors.ink, fontSize: 10, lineHeight: 15 }, recommendationAuthor: { color: colors.muted, fontSize: 8, marginTop: 5 }, emptyRecommendation: { color: colors.muted, fontSize: 10, lineHeight: 15 }, recommendationAction: { flexDirection: 'row', gap: 6, alignItems: 'center', marginTop: 13 }, recommendationActionText: { color: colors.green, fontSize: 10, fontWeight: '900' }, profileNotice: { position: 'absolute', left: 18, right: 18, bottom: 92, padding: 11, borderRadius: 14, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line }, profileNoticeText: { color: colors.muted, fontSize: 10, textAlign: 'center' }, recommendationSheet: { backgroundColor: colors.white, borderTopLeftRadius: 25, borderTopRightRadius: 25, padding: 20, gap: 12 }, modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, modalTitle: { color: colors.ink, fontSize: 18, fontWeight: '900' }, modalCopy: { color: colors.muted, fontSize: 11, lineHeight: 17 }, recommendationInput: { minHeight: 130, borderRadius: 15, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.cream, padding: 13, color: colors.ink, fontSize: 11, textAlignVertical: 'top' },
   projectRow: { gap: 10, paddingRight: 15 }, project: { width: 190, borderRadius: 18, padding: 14, backgroundColor: colors.cream }, projectIcon: { width: 43, height: 43, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, projectTitle: { color: colors.ink, fontSize: 12, fontWeight: '900', marginTop: 11 }, projectDetail: { color: colors.muted, fontSize: 8, marginTop: 3 }, projectLink: { flexDirection: 'row', gap: 5, alignItems: 'center', marginTop: 12 }, projectLinkText: { color: colors.green, fontSize: 9, fontWeight: '900' },
   experience: { flexDirection: 'row', gap: 11, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: colors.line }, experienceIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.mint, alignItems: 'center', justifyContent: 'center' }, experienceTitle: { color: colors.ink, fontSize: 11, fontWeight: '900' }, experienceOrg: { color: colors.muted, fontSize: 9, marginTop: 3 }, experienceDates: { color: colors.subtle, fontSize: 8, marginTop: 4 },
   achievement: { flexDirection: 'row', gap: 11, alignItems: 'center', paddingVertical: 9 }, achievementIcon: { width: 44, height: 44, borderRadius: 15, backgroundColor: colors.goldPale, alignItems: 'center', justifyContent: 'center' },

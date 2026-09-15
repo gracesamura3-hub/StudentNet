@@ -157,3 +157,69 @@ and returns `{ "answer": "..." }`. The server should use a recognised model/fram
 ## Privacy
 
 StudentNet follows data minimisation: CVs are owner-only, business access is constrained by profile visibility, users can preview their profile audience, and administrators receive only the elevated access required for moderation. Production policies must document purpose, consent, retention, correction, export, and deletion in line with POPIA.
+
+## Role model and access decisions
+
+StudentNet has four distinct user roles. The role is stored in the `users/{uid}` profile and is enforced again by Firestore rules; the client never treats a hidden button as a security boundary.
+
+| Role | Primary capabilities | Verification and access rule |
+| --- | --- | --- |
+| Student | Build a portfolio, connect with the community, explore pathways, apply for roles, message connections, and view personal analytics | Registration requires an institutional email. The account is activated only after Firebase email verification and the matching profile is valid. |
+| Alumni | Maintain a professional profile, mentor students, share career stories, endorse skills, write recommendations, and contribute pathway outcomes | Personal email is accepted, but the applicant supplies a student number, graduation reference, or other institutional proof. Staff approve the profile before active access. |
+| Business/employer | Publish opportunities, review applicants, identify skills, and manage a recruitment pipeline | Registration requires a company website or registration reference. Staff approval is required before employer operations become active. |
+| Administrator | Approve members and opportunities, moderate content, publish events and announcements, and inspect platform analytics | No public signup. An authorised operator provisions the account out of band and assigns the Firebase `admin: true` custom claim. |
+
+The application has three runtime experiences: Firebase-backed production authentication, explicitly enabled device-only local development authentication, and a no-credentials demo preview. Demo personas are useful for a presentation, but they do not grant Firebase data access and cannot enter the Admin tab.
+
+## Alumni identity verification strategy
+
+Alumni often lose access to their student mailbox after graduation, so requiring an active `@my.richfield.ac.za` address would exclude legitimate graduates. StudentNet uses a staged trust model:
+
+1. The applicant registers with a reachable personal email and supplies a student number, graduation reference, programme, or other agreed institutional reference.
+2. The client validates that the reference is present, then creates a Firebase account and a `users/{uid}` profile with `role: 'alumni'`, `status: 'pending'`, and `verified: false`.
+3. An administrator compares the submitted reference against institutional records or an approved alumni register. The reviewer may approve, reject, or request clarification.
+4. Only an approved profile with `status: 'active'` can access protected community data. Firestore rules enforce the active-state requirement independently of the UI.
+
+This balances accessibility and trust: graduates are not blocked by an expired mailbox, while the platform still requires evidence that a person belongs to the alumni community. The reference is used for verification, not displayed as public profile content. In production, the reference should be encrypted or access-restricted, retained only for the verification period, and deleted or redacted under the institution's retention policy.
+
+## Admin provisioning and security rationale
+
+Administrators are provisioned by `scripts/provision-admin.mjs`, never through public registration. The operator authenticates to Firebase Admin SDK with Application Default Credentials or `GOOGLE_APPLICATION_CREDENTIALS`, supplies `FIREBASE_PROJECT_ID` and `ADMIN_EMAIL`, and supplies a strong `ADMIN_PASSWORD` only when a new Firebase Auth account must be created.
+
+The script:
+
+- Finds or creates the Firebase Auth account.
+- Sets the custom claim `{ admin: true }`.
+- Creates or repairs an active `users/{uid}` profile with `role: 'admin'`.
+- Leaves the account ready for normal staff sign-in.
+
+The critical security decision is that frontend gating is only a usability feature. The Firestore rule helper `admin()` requires both an active profile with `role == 'admin'` and `request.auth.token.admin == true`. This prevents a user from gaining administrator authority by editing local state, changing a route, or submitting a forged profile field. Admin-only writes include user decisions, opportunity approvals, event publication, announcements, moderation actions, and analytics reads.
+
+After changing a custom claim, the user must refresh their Firebase ID token by signing out and back in, or otherwise forcing token refresh. Service-account credentials and admin passwords must remain outside the Expo bundle and must never be placed in `.env` public variables.
+
+## Feature implementation map
+
+The hackathon implementation is organized into five steps:
+
+- **Step 1:** Persistent onboarding, interactive tutorial, skill endorsements, written recommendations, and the career pathway explorer.
+- **Step 2:** Weighted smart job matching and the rule-based NLP skill/qualification extractor.
+- **Step 3:** Client-side video validation and thumbnails, Storage-backed media posts, push-token registration, real-time notification listeners, and the in-app notification banner.
+- **Step 4:** Reusable `BarChart`, `ProgressRing`, and `HorizontalMetricBar` components powering student, employer, and administrator dashboards.
+- **Step 5:** This documentation, the alumni verification strategy, the admin security rationale, and the presentation deck in `docs/PRESENTATION_DECK.md`.
+
+The chart layer is intentionally small and cross-platform. It uses `react-native-svg` for radial rings and flex-based React Native views for bars, so the same visual components work on native and Expo Web. Firebase remains the source of live analytics data; where historical analytics are not yet stored, the UI clearly presents the available aggregate rather than claiming a nonexistent time series.
+
+## POPIA presentation position
+
+StudentNet's POPIA position is based on purpose limitation, data minimisation, consent, access control, and accountable deletion:
+
+- Registration explains why identity, programme, skills, and verification references are collected.
+- Profile visibility is granular: users can preview public versus connections visibility, and business visibility is constrained by profile fields.
+- CVs and private messages are not public feed content. Storage rules and Firestore rules enforce ownership and participant access.
+- Alumni verification references are restricted to authorised reviewers and should have a documented retention period.
+- Push notifications are opt-in at device permission level; a denied permission does not prevent core app use.
+- Users should receive correction, export, and deletion workflows before production launch.
+- Analytics should be aggregated for platform reporting instead of exposing raw personal profiles.
+- AI requests should send only the minimum profile context needed, with provider secrets kept server-side.
+
+These controls are part of the product design, not a promise that a prototype is already a complete legal compliance programme. Before production, the institution should complete a formal POPIA impact assessment, appoint an accountable information officer, approve retention schedules, and publish consent and privacy notices.

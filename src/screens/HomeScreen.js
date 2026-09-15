@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Avatar, IconButton, Pill, SectionHeader } from '../components/ui';
-import { notifications, posts as seedPosts, stories } from '../data/demoData';
+import { notifications as seedNotifications, posts as seedPosts, stories } from '../data/demoData';
 import { useAuth } from '../context/AuthContext';
 import { createPost, listenToFeed, listenToPublishedAnnouncements, listenToPublishedEvents, toggleReaction } from '../firebase/dataService';
 import { colors, shadow } from '../theme';
@@ -18,7 +18,7 @@ const roleContent = {
 };
 
 export default function HomeScreen({ navigation }) {
-  const { user, isDemo } = useAuth();
+  const { user, isDemo, notifications: liveNotifications, dismissNotification } = useAuth();
   const [feed, setFeed] = useState(seedPosts);
   const [events, setEvents] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
@@ -165,6 +165,7 @@ const PostCard = React.memo(function PostCard({ post, onReact }) {
         <View style={styles.postIdentity}><Text style={styles.postAuthor}>{post.author}</Text><Text numberOfLines={1} style={styles.postRole}>{post.role}</Text><Text style={styles.postTime}>{post.time} · <Ionicons name="people" size={11} /></Text></View>
         <IconButton name="ellipsis-horizontal" size={36} />
       </View>
+      {post.thumbnailUrl || post.thumbnailUri ? <Pressable style={styles.videoPreview}><Image source={{ uri: post.thumbnailUrl || post.thumbnailUri }} style={styles.videoThumbnail} resizeMode="cover" /><View style={styles.videoPlay}><Ionicons name="play" size={20} color={colors.forest} /></View><Text style={styles.videoLabel}>Video story</Text></Pressable> : null}
       <Text style={styles.postBody}>{post.body}</Text>
       <Text style={styles.postTag}>{post.tag}</Text>
       <View style={styles.postStats}><Text style={styles.postStat}><Text style={styles.reactionBubble}>👏</Text> {post.reactions}</Text><Text style={styles.postStat}>{post.comments} comments</Text></View>
@@ -202,11 +203,11 @@ const NotificationsModal = React.memo(function NotificationsModal({ visible, onC
         <View style={styles.modalHeader}><Pressable onPress={onClose}><Ionicons name="close" size={24} color={colors.ink} /></Pressable><Text style={styles.modalTitle}>Notifications</Text><Text style={styles.modalPublish}>Read all</Text></View>
         <ScrollView contentContainerStyle={styles.notificationList}>
           <Text style={styles.notificationEyebrow}>NEW</Text>
-          {notifications.map(item => (
-            <View style={styles.notification} key={item.id}>
+          {items.map(item => (
+            <Pressable onPress={() => onRead?.(item.id)} style={styles.notification} key={item.id}>
               <View style={[styles.notificationIcon, { backgroundColor: item.tone === 'green' ? colors.mint : item.tone === 'blue' ? colors.bluePale : colors.goldPale }]}><Ionicons name={item.icon} size={20} color={colors.green} /></View>
               <View style={{ flex: 1 }}><Text style={styles.notificationTitle}>{item.title}</Text><Text style={styles.notificationDetail}>{item.detail}</Text></View><Text style={styles.notificationTime}>{item.time}</Text>
-            </View>
+            </Pressable>
           ))}
         </ScrollView>
       </SafeAreaView>
@@ -260,6 +261,8 @@ const styles = StyleSheet.create({
   postRole: { color: colors.muted, fontSize: 10, marginTop: 2 },
   postTime: { color: colors.subtle, fontSize: 9, marginTop: 3 },
   postBody: { color: colors.ink, fontSize: 13, lineHeight: 20, marginTop: 15 },
+  videoPreview: { height: 190, borderRadius: 18, overflow: 'hidden', marginTop: 14, backgroundColor: colors.forest, alignItems: 'center', justifyContent: 'center' },
+  videoThumbnail: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' }, videoPlay: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center' }, videoLabel: { position: 'absolute', left: 12, bottom: 10, color: colors.white, fontSize: 9, fontWeight: '900' },
   postTag: { color: colors.green, fontSize: 11, fontWeight: '800', marginTop: 8 },
   postStats: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.line },
   postStat: { color: colors.muted, fontSize: 10 },
@@ -274,6 +277,7 @@ const styles = StyleSheet.create({
   modalPublish: { color: colors.green, fontSize: 13, fontWeight: '900' },
   composerIdentity: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 20 },
   composerInput: { minHeight: 190, paddingHorizontal: 20, color: colors.ink, fontSize: 18, lineHeight: 27, textAlignVertical: 'top' },
+  videoAttachment: { flexDirection: 'row', gap: 10, alignItems: 'center', marginHorizontal: 20, padding: 10, borderRadius: 15, backgroundColor: colors.mint }, attachmentThumbnail: { width: 58, height: 48, borderRadius: 10 }, documentPreview: { width: 58, height: 48, borderRadius: 10, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' }, attachmentTitle: { color: colors.forest, fontSize: 11, fontWeight: '900' }, attachmentDetail: { color: colors.green, fontSize: 9, marginTop: 3 }, mediaError: { color: colors.coral, fontSize: 10, lineHeight: 15, marginHorizontal: 20, marginTop: 10 },
   composerTools: { flexDirection: 'row', gap: 10, padding: 20, borderTopWidth: 1, borderTopColor: colors.line, alignItems: 'center' },
   toolButton: { width: 40, height: 40, borderRadius: 13, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center' },
   attachmentRow: { paddingHorizontal: 20, marginBottom: 10, gap: 8 },

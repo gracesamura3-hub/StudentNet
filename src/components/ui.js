@@ -1,5 +1,5 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, shadow } from '../theme';
 
@@ -62,6 +62,19 @@ export function EmptyState({ icon, title, detail }) {
   );
 }
 
+export function InAppNotificationBanner({ notification, onDismiss }) {
+  const [translateY] = useState(() => new Animated.Value(-120));
+
+  useEffect(() => {
+    if (!notification) return undefined;
+    Animated.spring(translateY, { toValue: 0, useNativeDriver: true, tension: 70, friction: 9 }).start();
+    return () => { Animated.timing(translateY, { toValue: -120, duration: 160, useNativeDriver: true }).start(); };
+  }, [notification, translateY]);
+
+  if (!notification) return null;
+  return <Animated.View style={[styles.notificationBanner, { transform: [{ translateY }] }]}><View style={styles.notificationBannerIcon}><Ionicons name={notification.icon || 'notifications-outline'} size={19} color={colors.forest} /></View><View style={styles.notificationBannerCopy}><Text numberOfLines={1} style={styles.notificationBannerTitle}>{notification.title || 'New StudentNet update'}</Text><Text numberOfLines={2} style={styles.notificationBannerDetail}>{notification.detail || notification.body || notification.message || 'You have a new notification.'}</Text></View><Pressable accessibilityRole="button" onPress={onDismiss} hitSlop={10} style={styles.notificationBannerClose}><Ionicons name="close" size={18} color={colors.muted} /></Pressable></Animated.View>;
+}
+
 const styles = StyleSheet.create({
   avatar: { alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: colors.ink, fontWeight: '800', letterSpacing: -0.4 },
@@ -86,4 +99,7 @@ const styles = StyleSheet.create({
   emptyIcon: { width: 58, height: 58, borderRadius: 20, backgroundColor: colors.mint, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
   emptyTitle: { fontSize: 17, fontWeight: '800', color: colors.ink, marginBottom: 6 },
   emptyDetail: { textAlign: 'center', fontSize: 13, lineHeight: 19, color: colors.muted },
+  notificationBanner: { position: 'absolute', top: 14, left: 14, right: 14, zIndex: 100, flexDirection: 'row', gap: 10, alignItems: 'center', padding: 12, borderRadius: 17, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, shadowColor: colors.ink, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.14, shadowRadius: 14, elevation: 8 },
+  notificationBannerIcon: { width: 38, height: 38, borderRadius: 13, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center' },
+  notificationBannerCopy: { flex: 1 }, notificationBannerTitle: { color: colors.ink, fontSize: 11, fontWeight: '900' }, notificationBannerDetail: { color: colors.muted, fontSize: 9, lineHeight: 13, marginTop: 3 }, notificationBannerClose: { padding: 4 },
 });

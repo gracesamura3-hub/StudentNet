@@ -7,6 +7,12 @@ service cloud.firestore {
     function role(name) { return active() && me().data.role == name; }
     function admin() { return role('admin') && request.auth.token.admin == true; }
     function owns(id) { return signedIn() && request.auth.uid == id; }
+    function connectedTo(userId) {
+      let connectionId = request.auth.uid < userId
+        ? request.auth.uid + '_' + userId
+        : userId + '_' + request.auth.uid;
+      return active() && get(/databases/$(database)/documents/connections/$(connectionId)).data.status == 'accepted';
+    }
     function unchanged(fields) { return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields); }
     function institutionalEmail() {
       return request.auth.token.email.matches('.*@(my\\.richfield\\.ac\\.za|richfield\\.ac\\.za|my\\.aaa\\.ac\\.za|aaa\\.ac\\.za)$');
@@ -34,6 +40,32 @@ service cloud.firestore {
         allow read, update: if owns(userId);
         allow create: if active();
       }
+      match /endorsements/{skillId} {
+        allow read: if active();
+        allow create: if active()
+          && request.auth.uid in request.resource.data.endorsedBy
+          && request.resource.data.skillName is string
+          && request.resource.data.endorsedBy is list
+          && request.resource.data.count == request.resource.data.endorsedBy.size();
+        allow update: if active()
+          && request.resource.data.skillName is string
+          && request.resource.data.endorsedBy is list
+          && request.resource.data.count == request.resource.data.endorsedBy.size()
+          && (request.auth.uid in request.resource.data.endorsedBy || request.auth.uid in resource.data.endorsedBy);
+        allow delete: if active() && request.auth.uid in resource.data.endorsedBy;
+      }
+      match /recommendations/{recommendationId} {
+        allow read: if active() && (resource.data.status == 'approved' || resource.data.authorId == request.auth.uid || admin());
+        allow create: if active()
+          && request.auth.uid != userId
+          && connectedTo(userId)
+          && request.resource.data.authorId == request.auth.uid
+          && request.resource.data.status == 'pending'
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 600;
+        allow update, delete: if admin() || (active() && resource.data.authorId == request.auth.uid);
+      }
     }
 
     match /posts/{postId} {
@@ -53,8 +85,15 @@ service cloud.firestore {
 
     match /connections/{connectionId} {
       allow read: if active() && request.auth.uid in resource.data.participants;
-      allow create: if active() && request.auth.uid == request.resource.data.requestedBy;
-      allow update: if active() && request.auth.uid in resource.data.participants;
+      allow create: if active()
+        && request.auth.uid == request.resource.data.requesterId
+        && request.auth.uid == request.resource.data.requestedBy
+        && request.resource.data.recipientId is string
+        && request.resource.data.status == 'pending'
+        && request.auth.uid in request.resource.data.participants;
+      allow update: if active()
+        && request.auth.uid in resource.data.participants
+        && request.resource.data.status in ['pending', 'accepted', 'declined'];
       allow delete: if active() && request.auth.uid in resource.data.participants || admin();
     }
 

@@ -29,6 +29,7 @@
     "expo-linear-gradient": "~15.0.8",
     "expo-notifications": "~0.32.16",
     "expo-status-bar": "~3.0.9",
+    "expo-video-thumbnails": "~10.0.8",
     "firebase": "^12.8.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
