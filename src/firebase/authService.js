@@ -7,7 +7,7 @@ import {
   signOut,
   updateProfile,
 } from 'firebase/auth';
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from './config';
 
 const STUDENT_DOMAINS = ['my.richfield.ac.za', 'richfield.ac.za', 'my.aaa.ac.za', 'aaa.ac.za'];
@@ -63,7 +63,18 @@ export function normalizeUserProfile(profile = {}) {
     year: source.year || (role === 'business' ? 'Verified employer' : role === 'alumni' ? 'Alumni' : 'Student'),
     completion: Number.isFinite(Number(source.completion)) ? Number(source.completion) : 25,
     skills: Array.isArray(source.skills) ? source.skills : [],
+    onboarded: source.onboarded === true,
   };
+}
+
+export async function markUserOnboarded(userId) {
+  assertFirebase();
+  if (!userId) throw new Error('A signed-in user is required to complete onboarding.');
+  await updateDoc(doc(db, 'users', userId), {
+    onboarded: true,
+    onboardedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
 }
 
 export async function signInUser(email, password) {
@@ -127,10 +138,10 @@ export async function registerUser({ email, password, firstName, lastName, role,
     programme: role === 'business' ? 'Graduate talent partner' : 'Complete your programme',
     campus: 'Richfield community',
     year: role === 'business' ? 'Verified employer' : role === 'alumni' ? 'Alumni' : 'Student',
-    skills: [],
     visibility: { public: ['name', 'headline', 'skills'], business: ['name', 'headline', 'skills', 'portfolio'] },
     completion: 20,
     skills: [],
+    onboarded: false,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });

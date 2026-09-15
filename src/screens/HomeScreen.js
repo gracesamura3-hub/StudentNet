@@ -1,13 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Avatar, IconButton, Pill, SectionHeader } from '../components/ui';
-import { notifications, posts as seedPosts, stories } from '../data/demoData';
+import { notifications as seedNotifications, posts as seedPosts, stories } from '../data/demoData';
 import { useAuth } from '../context/AuthContext';
 import { createPost, listenToFeed, listenToPublishedAnnouncements, listenToPublishedEvents, toggleReaction } from '../firebase/dataService';
 import { colors, shadow } from '../theme';
+import { openWebFilePicker, preprocessVideo } from '../utils/mediaUtils';
 
 const roleContent = {
   student: { eyebrow: 'YOUR NEXT STEP', title: '3 new roles match your skills', detail: 'Based on React Native, JavaScript and your BSc IT programme.', action: 'See my matches', icon: 'sparkles' },
@@ -17,13 +20,16 @@ const roleContent = {
 };
 
 export default function HomeScreen({ navigation }) {
-  const { user, isDemo } = useAuth();
+  const { user, isDemo, notifications: liveNotifications, dismissNotification } = useAuth();
   const [feed, setFeed] = useState(seedPosts);
   const [events, setEvents] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
   const [composerOpen, setComposerOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [draft, setDraft] = useState('');
+  const [attachedMedia, setAttachedMedia] = useState(null);
+  const [mediaError, setMediaError] = useState('');
+  const [publishing, setPublishing] = useState(false);
   const banner = roleContent[user.role] || roleContent.student;
   const greeting = useMemo(() => new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening', []);
 
@@ -45,15 +51,73 @@ export default function HomeScreen({ navigation }) {
   }, [isDemo, user.id]);
 
   async function publishPost() {
-    if (!draft.trim()) return;
-    const newPost = {
-      id: `local-${Date.now()}`, authorId: user.id, author: user.name, initials: user.initials,
-      role: user.headline, time: 'now', accent: colors.mint, body: draft.trim(), tag: '#ProfessionalUpdate', reactions: 0, comments: 0,
-    };
-    setFeed(current => [newPost, ...current]);
-    setDraft('');
-    setComposerOpen(false);
-    if (!isDemo) await createPost(user, newPost.body);
+    if (!draft.trim() && !attachedMedia) return;
+    setPublishing(true);
+    setMediaError('');
+    try {
+      const body = draft.trim();
+      if (!isDemo) await createPost(user, body, attachedMedia);
+      const newPost = {
+        id: `local-${Date.now()}`, authorId: user.id, author: user.name, initials: user.initials,
+        role: user.headline, time: 'now', accent: colors.mint, body, tag: '#ProfessionalUpdate', reactions: 0, comments: 0,
+        type: attachedMedia?.type || 'text', mediaType: attachedMedia?.type || 'text', thumbnailUri: attachedMedia?.thumbnailUri || null, attachmentUri: attachedMedia?.uri || null, attachmentName: attachedMedia?.name || null,
+      };
+      setFeed(current => [newPost, ...current]);
+      setDraft('');
+      setAttachedMedia(null);
+      setComposerOpen(false);
+    } catch (error) {
+      setMediaError(error.message || 'The post could not be published.');
+      Alert.alert('Post error', error.message || 'The post could not be published.');
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  async function pickVideo() {
+    setMediaError('');
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (permission.status !== 'granted') {
+      setMediaError('Allow media library access to attach a video.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['videos'], allowsEditing: false, quality: 1 });
+    if (result.canceled || !result.assets?.[0]) return;
+    try {
+      const processed = await preprocessVideo(result.assets[0]);
+      setAttachedMedia({ ...processed, type: 'video', uri: processed.videoUri, name: result.assets[0].fileName || 'video.mp4', mimeType: result.assets[0].mimeType || 'video/mp4' });
+    } catch (error) {
+      setAttachedMedia(null);
+      setMediaError(error.message || 'The video could not be processed.');
+    }
+  }
+
+  async function pickImage() {
+    setMediaError('');
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (permission.status !== 'granted') throw new Error('Allow media library access to attach an image.');
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, quality: 0.8 });
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+      setAttachedMedia({ type: 'image', uri: asset.uri, name: asset.fileName || 'image.jpg', mimeType: asset.mimeType || 'image/jpeg', width: asset.width, height: asset.height });
+    } catch (error) {
+      if (Platform.OS === 'web' && openWebFilePicker({ accept: 'image/*', onFile: file => setAttachedMedia({ type: 'image', ...file }) })) return;
+      setMediaError(error.message || 'The image picker could not be opened.');
+    }
+  }
+
+  async function pickDocument() {
+    setMediaError('');
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'], copyToCacheDirectory: true });
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+      setAttachedMedia({ type: 'doc', uri: asset.uri, name: asset.name, mimeType: asset.mimeType || 'application/octet-stream', size: asset.size });
+    } catch (error) {
+      if (Platform.OS === 'web' && openWebFilePicker({ accept: '.pdf,.doc,.docx,.txt', onFile: file => setAttachedMedia({ type: 'doc', ...file }) })) return;
+      setMediaError(error.message || 'The document picker could not be opened.');
+    }
   }
 
   async function react(post) {
@@ -125,8 +189,8 @@ export default function HomeScreen({ navigation }) {
         {feed.map(post => <PostCard key={post.id} post={post} onReact={() => react(post)} />)}
       </ScrollView>
 
-      <ComposeModal visible={composerOpen} onClose={() => setComposerOpen(false)} user={user} draft={draft} setDraft={setDraft} publish={publishPost} />
-      <NotificationsModal visible={notificationsOpen} onClose={() => setNotificationsOpen(false)} />
+      <ComposeModal visible={composerOpen} onClose={() => setComposerOpen(false)} user={user} draft={draft} setDraft={setDraft} publish={publishPost} publishing={publishing} attachedMedia={attachedMedia} pickImage={pickImage} pickVideo={pickVideo} pickDocument={pickDocument} clearMedia={() => setAttachedMedia(null)} error={mediaError} />
+      <NotificationsModal items={liveNotifications.length ? liveNotifications : seedNotifications} visible={notificationsOpen} onClose={() => setNotificationsOpen(false)} onRead={dismissNotification} />
     </SafeAreaView>
   );
 }
@@ -143,6 +207,7 @@ function PostCard({ post, onReact }) {
         <View style={styles.postIdentity}><Text style={styles.postAuthor}>{post.author}</Text><Text numberOfLines={1} style={styles.postRole}>{post.role}</Text><Text style={styles.postTime}>{post.time} · <Ionicons name="people" size={11} /></Text></View>
         <IconButton name="ellipsis-horizontal" size={36} />
       </View>
+      {post.thumbnailUrl || post.thumbnailUri ? <Pressable style={styles.videoPreview}><Image source={{ uri: post.thumbnailUrl || post.thumbnailUri }} style={styles.videoThumbnail} resizeMode="cover" /><View style={styles.videoPlay}><Ionicons name="play" size={20} color={colors.forest} /></View><Text style={styles.videoLabel}>Video story</Text></Pressable> : null}
       <Text style={styles.postBody}>{post.body}</Text>
       <Text style={styles.postTag}>{post.tag}</Text>
       <View style={styles.postStats}><Text style={styles.postStat}><Text style={styles.reactionBubble}>👏</Text> {post.reactions}</Text><Text style={styles.postStat}>{post.comments} comments</Text></View>
@@ -155,15 +220,17 @@ function PostCard({ post, onReact }) {
   );
 }
 
-function ComposeModal({ visible, onClose, user, draft, setDraft, publish }) {
+function ComposeModal({ visible, onClose, user, draft, setDraft, publish, publishing, attachedMedia, pickImage, pickVideo, pickDocument, clearMedia, error }) {
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.modalPage}>
-        <View style={styles.modalHeader}><Pressable onPress={onClose}><Text style={styles.modalCancel}>Cancel</Text></Pressable><Text style={styles.modalTitle}>Create a post</Text><Pressable onPress={publish}><Text style={[styles.modalPublish, !draft.trim() && { opacity: 0.35 }]}>Post</Text></Pressable></View>
+        <View style={styles.modalHeader}><Pressable onPress={onClose}><Text style={styles.modalCancel}>Cancel</Text></Pressable><Text style={styles.modalTitle}>Create a post</Text><Pressable disabled={publishing} onPress={publish}><Text style={[styles.modalPublish, !draft.trim() && !attachedMedia && { opacity: 0.35 }]}>{publishing ? 'Posting…' : 'Post'}</Text></Pressable></View>
         <View style={styles.composerIdentity}><Avatar initials={user.initials} color={colors.mint} /><View><Text style={styles.postAuthor}>{user.name}</Text><Pill icon="people-outline">Connections</Pill></View></View>
         <TextInput autoFocus multiline value={draft} onChangeText={setDraft} placeholder="Share an achievement, idea or career update…" placeholderTextColor={colors.subtle} style={styles.composerInput} />
+        {attachedMedia ? <View style={styles.videoAttachment}>{attachedMedia.type === 'image' || attachedMedia.type === 'video' ? <Image source={{ uri: attachedMedia.thumbnailUri || attachedMedia.uri }} style={styles.attachmentThumbnail} /> : <View style={styles.documentPreview}><Ionicons name="document-text" size={24} color={colors.green} /></View>}<View style={{ flex: 1 }}><Text style={styles.attachmentTitle}>{attachedMedia.type === 'video' ? 'Video ready' : attachedMedia.type === 'image' ? 'Image ready' : 'Document ready'}</Text><Text numberOfLines={1} style={styles.attachmentDetail}>{attachedMedia.name || 'Selected attachment'}</Text></View><Pressable onPress={clearMedia} hitSlop={8}><Ionicons name="close-circle" size={22} color={colors.coral} /></Pressable></View> : null}
+        {error ? <Text style={styles.mediaError}>{error}</Text> : null}
         <View style={styles.composerTools}>
-          <IconButton name="image-outline" /><IconButton name="videocam-outline" /><IconButton name="document-text-outline" />
+          <IconButton name="image-outline" onPress={pickImage} /><IconButton name="videocam-outline" onPress={pickVideo} /><IconButton name="document-text-outline" onPress={pickDocument} />
           <View style={{ flex: 1 }} /><Text style={styles.characterCount}>{draft.length}/1,500</Text>
         </View>
       </SafeAreaView>
@@ -171,18 +238,18 @@ function ComposeModal({ visible, onClose, user, draft, setDraft, publish }) {
   );
 }
 
-function NotificationsModal({ visible, onClose }) {
+function NotificationsModal({ items, visible, onClose, onRead }) {
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.modalPage}>
         <View style={styles.modalHeader}><Pressable onPress={onClose}><Ionicons name="close" size={24} color={colors.ink} /></Pressable><Text style={styles.modalTitle}>Notifications</Text><Text style={styles.modalPublish}>Read all</Text></View>
         <ScrollView contentContainerStyle={styles.notificationList}>
           <Text style={styles.notificationEyebrow}>NEW</Text>
-          {notifications.map(item => (
-            <View style={styles.notification} key={item.id}>
+          {items.map(item => (
+            <Pressable onPress={() => onRead?.(item.id)} style={styles.notification} key={item.id}>
               <View style={[styles.notificationIcon, { backgroundColor: item.tone === 'green' ? colors.mint : item.tone === 'blue' ? colors.bluePale : colors.goldPale }]}><Ionicons name={item.icon} size={20} color={colors.green} /></View>
               <View style={{ flex: 1 }}><Text style={styles.notificationTitle}>{item.title}</Text><Text style={styles.notificationDetail}>{item.detail}</Text></View><Text style={styles.notificationTime}>{item.time}</Text>
-            </View>
+            </Pressable>
           ))}
         </ScrollView>
       </SafeAreaView>
@@ -236,6 +303,8 @@ const styles = StyleSheet.create({
   postRole: { color: colors.muted, fontSize: 10, marginTop: 2 },
   postTime: { color: colors.subtle, fontSize: 9, marginTop: 3 },
   postBody: { color: colors.ink, fontSize: 13, lineHeight: 20, marginTop: 15 },
+  videoPreview: { height: 190, borderRadius: 18, overflow: 'hidden', marginTop: 14, backgroundColor: colors.forest, alignItems: 'center', justifyContent: 'center' },
+  videoThumbnail: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' }, videoPlay: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center' }, videoLabel: { position: 'absolute', left: 12, bottom: 10, color: colors.white, fontSize: 9, fontWeight: '900' },
   postTag: { color: colors.green, fontSize: 11, fontWeight: '800', marginTop: 8 },
   postStats: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.line },
   postStat: { color: colors.muted, fontSize: 10 },
@@ -250,6 +319,7 @@ const styles = StyleSheet.create({
   modalPublish: { color: colors.green, fontSize: 13, fontWeight: '900' },
   composerIdentity: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 20 },
   composerInput: { minHeight: 190, paddingHorizontal: 20, color: colors.ink, fontSize: 18, lineHeight: 27, textAlignVertical: 'top' },
+  videoAttachment: { flexDirection: 'row', gap: 10, alignItems: 'center', marginHorizontal: 20, padding: 10, borderRadius: 15, backgroundColor: colors.mint }, attachmentThumbnail: { width: 58, height: 48, borderRadius: 10 }, documentPreview: { width: 58, height: 48, borderRadius: 10, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' }, attachmentTitle: { color: colors.forest, fontSize: 11, fontWeight: '900' }, attachmentDetail: { color: colors.green, fontSize: 9, marginTop: 3 }, mediaError: { color: colors.coral, fontSize: 10, lineHeight: 15, marginHorizontal: 20, marginTop: 10 },
   composerTools: { flexDirection: 'row', gap: 10, padding: 20, borderTopWidth: 1, borderTopColor: colors.line, alignItems: 'center' },
   characterCount: { color: colors.subtle, fontSize: 10 },
   notificationList: { padding: 20 },

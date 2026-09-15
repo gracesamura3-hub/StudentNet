@@ -8,16 +8,32 @@ import { buildContextualNiaTip } from '../utils/profileAi';
 import { colors } from '../theme';
 
 const steps = [
-  { eyebrow: 'STEP 1 OF 3', icon: 'id-card-outline', title: 'Your story starts with a strong profile.', copy: 'Showcase your skills, experience, projects and ambitions in one professional portfolio.', note: 'Profiles with a photo and at least five skills are discovered more often.', accent: colors.bluePale },
-  { eyebrow: 'STEP 2 OF 3', icon: 'people-outline', title: 'Build relationships that move you forward.', copy: 'Meet classmates, follow alumni career journeys, and learn directly from verified mentors.', note: 'Thoughtful connection notes receive significantly more responses.', accent: colors.coralPale },
-  { eyebrow: 'STEP 3 OF 3', icon: 'sparkles-outline', title: 'Opportunities matched to your potential.', copy: 'We surface internships, graduate roles and events based on your programme, skills and interests.', note: 'Nia, your AI profile coach, is always available when you need guidance.', accent: colors.mint },
+  { eyebrow: 'STEP 1 OF 5', icon: 'home-outline', title: 'Your community, in one feed.', copy: 'See updates, announcements, events and career stories from the people and organisations around you.', note: 'Your feed becomes more relevant as your network grows.', accent: colors.mint },
+  { eyebrow: 'STEP 2 OF 5', icon: 'people-outline', title: 'Build relationships that move you forward.', copy: 'Meet classmates, follow alumni career journeys, find mentors and grow a professional network.', note: 'Thoughtful connection notes receive significantly more responses.', accent: colors.coralPale },
+  { eyebrow: 'STEP 3 OF 5', icon: 'briefcase-outline', title: 'Find careers with a clearer path.', copy: 'Explore approved opportunities and see how alumni from your programme progressed into real roles.', note: 'Your programme and skills help surface more relevant opportunities.', accent: colors.bluePale },
+  { eyebrow: 'STEP 4 OF 5', icon: 'chatbubble-ellipses-outline', title: 'Keep useful conversations close.', copy: 'Message connections directly and turn introductions into advice, collaboration and opportunity.', note: 'Your conversations stay private to the people involved.', accent: colors.goldPale },
+  { eyebrow: 'STEP 5 OF 5', icon: 'person-circle-outline', title: 'Make your profile work for you.', copy: 'Showcase skills, endorsements, recommendations, projects and experience in one professional portfolio.', note: 'A complete profile helps the right people understand your potential.', accent: colors.mint },
 ];
 
 export default function OnboardingScreen({ user, onComplete }) {
   const [index, setIndex] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   const step = steps[index];
   const final = index === steps.length - 1;
   const niaTip = useMemo(() => buildContextualNiaTip(user || {}), [user]);
+
+  async function complete() {
+    setBusy(true);
+    setError('');
+    try {
+      await onComplete();
+    } catch (completionError) {
+      setError(completionError.message || 'We could not save your onboarding progress. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -32,11 +48,12 @@ export default function OnboardingScreen({ user, onComplete }) {
       </View>
       <View style={styles.copy}>
         <Text style={styles.eyebrow}>{step.eyebrow}</Text><Text style={styles.title}>{step.title}</Text><Text style={styles.body}>{step.copy}</Text>
-        <View style={styles.note}><View style={styles.noteIcon}><Ionicons name="bulb-outline" size={19} color="#956600" /></View><Text style={styles.noteText}>{final ? niaTip : step.note}</Text></View>
+        <View style={styles.note}><View style={styles.noteIcon}><Ionicons name="bulb-outline" size={19} color="#956600" /></View><Text style={styles.noteText}>{final ? `${step.note} ${niaTip}` : step.note}</Text></View>
+        {error ? <Text style={styles.error}>{error}</Text> : null}
       </View>
       <View style={styles.footer}>
         <View style={styles.dots}>{steps.map((_, dotIndex) => <View key={dotIndex} style={[styles.dot, dotIndex === index && styles.dotActive]} />)}</View>
-        <PrimaryButton onPress={() => final ? onComplete() : setIndex(current => current + 1)} icon="arrow-forward">{final ? `Let’s build, ${user.firstName}` : 'Continue'}</PrimaryButton>
+        <PrimaryButton onPress={() => final ? complete() : setIndex(current => current + 1)} disabled={busy} icon="arrow-forward">{busy ? 'Saving…' : final ? `Let’s build, ${user.firstName}` : 'Continue'}</PrimaryButton>
         {index > 0 ? <Pressable onPress={() => setIndex(current => current - 1)}><Text style={styles.back}>Back</Text></Pressable> : <View style={{ height: 35 }} />}
       </View>
     </SafeAreaView>
@@ -51,6 +68,6 @@ const styles = StyleSheet.create({
   mainIcon: { width: 100, height: 100, borderRadius: 34, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
   floatChip: { position: 'absolute', flexDirection: 'row', gap: 7, alignItems: 'center', backgroundColor: colors.white, borderRadius: 14, paddingHorizontal: 11, paddingVertical: 9 }, floatChipTop: { top: 31, right: 19, transform: [{ rotate: '4deg' }] }, floatChipBottom: { bottom: 30, left: 18, transform: [{ rotate: '-4deg' }] }, floatText: { color: colors.ink, fontSize: 9, fontWeight: '800' },
   copy: { paddingTop: 22 }, eyebrow: { color: colors.green, fontSize: 9, fontWeight: '900', letterSpacing: 1.5 }, title: { color: colors.ink, fontSize: 31, lineHeight: 36, fontWeight: '900', letterSpacing: -1, marginTop: 9 }, body: { color: colors.muted, fontSize: 13, lineHeight: 20, marginTop: 11 },
-  note: { flexDirection: 'row', gap: 10, alignItems: 'center', backgroundColor: colors.goldPale, borderRadius: 17, padding: 12, marginTop: 18 }, noteIcon: { width: 37, height: 37, borderRadius: 13, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' }, noteText: { color: '#765D2B', fontSize: 9, lineHeight: 14, flex: 1 },
+  note: { flexDirection: 'row', gap: 10, alignItems: 'center', backgroundColor: colors.goldPale, borderRadius: 17, padding: 12, marginTop: 18 }, noteIcon: { width: 37, height: 37, borderRadius: 13, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' }, noteText: { color: '#765D2B', fontSize: 9, lineHeight: 14, flex: 1 }, error: { color: colors.coral, fontSize: 10, lineHeight: 15, marginTop: 10 },
   footer: { marginTop: 'auto', paddingTop: 18 }, dots: { flexDirection: 'row', gap: 5, justifyContent: 'center', marginBottom: 17 }, dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#CDD3CE' }, dotActive: { width: 22, backgroundColor: colors.green }, back: { textAlign: 'center', color: colors.green, fontSize: 11, fontWeight: '800', padding: 11 },
 });

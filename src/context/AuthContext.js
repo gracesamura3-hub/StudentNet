@@ -2,9 +2,9 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import { doc, onSnapshot } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db, isFirebaseConfigured } from '../firebase/config';
-import { normalizeUserProfile, registerUser, resetPassword, signInUser, signOutUser } from '../firebase/authService';
+import { markUserOnboarded, normalizeUserProfile, registerUser, resetPassword, signInUser, signOutUser } from '../firebase/authService';
 import { demoUsers } from '../data/demoData';
-import { registerPushToken } from '../firebase/notificationService';
+import { listenToUserNotifications, markNotificationRead, registerPushToken } from '../firebase/notificationService';
 
 const AuthContext = createContext(null);
 const isLocalAuthEnabled = process.env.NODE_ENV !== 'production' && process.env.EXPO_PUBLIC_ENABLE_LOCAL_AUTH === 'true';
@@ -17,6 +17,8 @@ export function AuthProvider({ children }) {
   const [demoRole, setDemoRole] = useState(null);
   const [loading, setLoading] = useState(Boolean(isFirebaseConfigured || isLocalAuthEnabled));
   const [authError, setAuthError] = useState('');
+  const [notifications, setNotifications] = useState([]);
+  const [incomingNotification, setIncomingNotification] = useState(null);
   const localAuthOperation = useRef(0);
 
   useEffect(() => {
@@ -39,9 +41,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    if (isFirebaseConfigured || !isLocalAuthEnabled) {
-      return undefined;
-    }
+    if (isFirebaseConfigured || !isLocalAuthEnabled) return undefined;
     let active = true;
     const operation = ++localAuthOperation.current;
     loadLocalAuth()
@@ -53,9 +53,26 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    if (profile?.id && profile.status === 'active' && !demoRole) {
-      registerPushToken(profile.id).catch(() => {});
+    if (profile?.id && profile.status === 'active' && !demoRole) registerPushToken(profile.id).catch(() => {});
+  }, [demoRole, profile?.id, profile?.status]);
+
+  useEffect(() => {
+    if (!isFirebaseConfigured || !profile?.id || profile.status !== 'active' || demoRole) {
+      return undefined;
     }
+    let firstSnapshot = true;
+    let knownIds = new Set();
+    const stopNotifications = listenToUserNotifications(profile.id, items => {
+      const nextIds = new Set(items.map(item => item.id));
+      if (!firstSnapshot) {
+        const newestUnread = items.find(item => !item.read && !knownIds.has(item.id));
+        if (newestUnread) setIncomingNotification(newestUnread);
+      }
+      knownIds = nextIds;
+      firstSnapshot = false;
+      setNotifications(items);
+    }, error => console.warn('Notification listener unavailable:', error?.message || error));
+    return () => stopNotifications?.();
   }, [demoRole, profile?.id, profile?.status]);
 
   const user = demoRole ? demoUsers[demoRole] : (localProfile || profile);
@@ -67,6 +84,25 @@ export function AuthProvider({ children }) {
     configured: isFirebaseConfigured,
     authMode: isFirebaseConfigured ? 'firebase' : isLocalAuthEnabled ? 'local' : 'unavailable',
     authError,
+    notifications,
+    incomingNotification,
+    dismissNotification: async notificationId => {
+      if (profile?.id && notificationId) await markNotificationRead(profile.id, notificationId);
+      setIncomingNotification(null);
+      setNotifications(current => current.map(item => item.id === notificationId ? { ...item, read: true } : item));
+    },
+    completeOnboarding: async () => {
+      if (!user?.id) throw new Error('A signed-in user is required to complete onboarding.');
+      if (isFirebaseConfigured && firebaseUser) {
+        await markUserOnboarded(user.id);
+        return;
+      }
+      if (isLocalAuthEnabled && localProfile) {
+        setLocalProfile(current => ({ ...current, onboarded: true }));
+        return;
+      }
+      throw new Error('Onboarding persistence is unavailable for this account.');
+    },
     enterDemo: role => setDemoRole(role),
     changeDemoRole: role => setDemoRole(role),
     signIn: async (email, password) => {
@@ -105,6 +141,8 @@ export function AuthProvider({ children }) {
       setProfile(null);
       setFirebaseUser(null);
       setAuthError('');
+      setNotifications([]);
+      setIncomingNotification(null);
       try {
         if (isFirebaseConfigured && auth) {
           await signOutUser();
@@ -115,9 +153,7 @@ export function AuthProvider({ children }) {
           await signOutLocalUser();
         }
       } catch (error) {
-        if (operation === localAuthOperation.current) {
-          setAuthError(error?.message || 'Sign out failed. Please try again.');
-        }
+        if (operation === localAuthOperation.current) setAuthError(error?.message || 'Sign out failed. Please try again.');
       } finally {
         if (operation === localAuthOperation.current) {
           setLocalProfile(null);
@@ -128,7 +164,7 @@ export function AuthProvider({ children }) {
         }
       }
     },
-  }), [authError, demoRole, firebaseUser, loading, localProfile, user]);
+  }), [authError, demoRole, firebaseUser, incomingNotification, loading, localProfile, notifications, profile, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

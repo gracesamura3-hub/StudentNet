@@ -15,5 +15,13 @@ service firebase.storage {
       // Clients upload only to processing; a Cloud Function publishes transcoded output.
       allow write: if owner(userId) && request.resource.size < 120 * 1024 * 1024;
     }
+    match /thumbnails/{userId}/{fileName} {
+      allow read: if signedIn();
+      allow write: if owner(userId) && request.resource.size < 2 * 1024 * 1024;
+    }
+    match /attachments/{userId}/{fileName} {
+      allow read: if signedIn();
+      allow write: if owner(userId) && request.resource.size < 20 * 1024 * 1024;
+    }
   }
 }

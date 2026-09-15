@@ -8,8 +8,10 @@ import { opportunities as seedOpportunities } from '../data/demoData';
 import { useAuth } from '../context/AuthContext';
 import { expressInterest, listenToApprovedOpportunities, saveOpportunity } from '../firebase/dataService';
 import { colors } from '../theme';
+import { calculateJobMatch } from '../utils/jobMatching';
 
 const filterOptions = ['Best matches', 'Internships', 'Graduate', 'Learnerships'];
+const filterTypes = { Internships: 'internship', Graduate: 'graduate', Learnerships: 'learnership' };
 
 export default function OpportunitiesScreen() {
   const { user, isDemo } = useAuth();
@@ -19,23 +21,20 @@ export default function OpportunitiesScreen() {
   const [filter, setFilter] = useState('Best matches');
   const [applied, setApplied] = useState([]);
 
-  const studentSkills = useMemo(() => {
-    if (!user || !Array.isArray(user.skills)) return [];
-    return user.skills.map(skill => String(skill).trim().toLowerCase()).filter(Boolean);
-  }, [user]);
-
   const jobsWithMatch = useMemo(() => {
-    const studentSkillSet = new Set(studentSkills);
     return jobs.map(job => {
-      const requiredSkills = Array.isArray(job.skills) ? job.skills.map(skill => String(skill).trim().toLowerCase()).filter(Boolean) : [];
-      const overlap = requiredSkills.filter(skill => studentSkillSet.has(skill)).length;
-      const match = requiredSkills.length ? Math.round((overlap / requiredSkills.length) * 100) : 0;
-      return { ...job, match };
+      const matchData = calculateJobMatch(user || {}, job);
+      return { ...job, match: matchData.score, matchData };
     });
-  }, [jobs, studentSkills]);
+  }, [jobs, user]);
 
-  const filteredJobs = useMemo(() => jobsWithMatch.filter(job => `${job.title} ${job.company} ${job.skills.join(' ')}`.toLowerCase().includes(query.toLowerCase())), [jobsWithMatch, query]);
+  const filteredJobs = useMemo(() => {
+    const searched = jobsWithMatch.filter(job => `${job.title} ${job.company} ${(job.skills || []).join(' ')}`.toLowerCase().includes(query.toLowerCase()));
+    const categorized = filter === 'Best matches' ? searched : searched.filter(job => String(job.type || '').toLowerCase().includes(filterTypes[filter]));
+    return [...categorized].sort((a, b) => filter === 'Best matches' ? b.match - a.match : 0);
+  }, [filter, jobsWithMatch, query]);
   const topMatchJob = useMemo(() => [...jobsWithMatch].sort((a, b) => b.match - a.match)[0], [jobsWithMatch]);
+  const studentSkills = Array.isArray(user?.skills) ? user.skills.map(skill => String(skill).trim().toLowerCase()) : [];
   const isBusiness = user.role === 'business';
   const isAdmin = user.role === 'admin';
 
@@ -100,7 +99,7 @@ export default function OpportunitiesScreen() {
             <View style={styles.skillRow}>{job.skills.map(skill => <View key={skill} style={styles.skill}><Text style={styles.skillText}>{skill}</Text></View>)}</View>
             <View style={styles.jobBottom}>
               <Text style={styles.posted}>{job.posted}</Text>
-              {!isBusiness && !isAdmin ? <View style={styles.matchPill}><Ionicons name="sparkles" size={12} color={colors.green} /><Text style={styles.matchPillText}>{job.match}% skill match</Text></View> : <Text style={styles.applicantCount}>{Math.round(job.match * 0.7)} applicants</Text>}
+              {!isBusiness && !isAdmin ? <View style={styles.matchBadge}><Ionicons name="sparkles" size={12} color={colors.forest} /><Text style={styles.matchBadgeText}>{job.match}% Match</Text></View> : <Text style={styles.applicantCount}>{Math.round(job.match * 0.7)} applicants</Text>}
             </View>
           </Pressable>
         ))}
@@ -120,7 +119,7 @@ function JobModal({ job, onClose, onApply, alreadyApplied, canApply }) {
           <View style={[styles.companyLogoLarge, { backgroundColor: job.color }]}><Text style={styles.companyLetterLarge}>{job.logo}</Text></View>
           <Text style={styles.modalCompany}>{job.company}</Text><Text style={styles.modalTitle}>{job.title}</Text>
           <Text style={styles.modalMeta}>{job.location}  ·  {job.type}</Text>
-          <View style={styles.matchDetail}><View style={styles.matchDetailIcon}><Ionicons name="sparkles" size={20} color={colors.green} /></View><View><Text style={styles.matchDetailTitle}>{job.match}% profile match</Text><Text style={styles.matchDetailCopy}>Your experience and interests strongly align.</Text></View></View>
+          <View style={styles.matchDetail}><View style={styles.matchDetailIcon}><Ionicons name="sparkles" size={20} color={colors.green} /></View><View><Text style={styles.matchDetailTitle}>{job.match}% profile match</Text><Text style={styles.matchDetailCopy}>{job.matchData?.reasoning || 'Add profile details to improve this match.'}</Text></View></View>
           <Text style={styles.detailHeading}>About the opportunity</Text><Text style={styles.detailCopy}>{job.description} You will collaborate with experienced mentors, contribute to real customer outcomes, and follow a structured growth plan.</Text>
           <Text style={styles.detailHeading}>Skills that stand out</Text><View style={styles.skillRow}>{job.skills.map(skill => <Pill key={skill} icon="checkmark-circle">{skill}</Pill>)}</View>
           <Text style={styles.detailHeading}>What you will do</Text>
@@ -170,8 +169,8 @@ const styles = StyleSheet.create({
   skillText: { color: colors.muted, fontSize: 8, fontWeight: '700' },
   jobBottom: { borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 11, marginTop: 13, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   posted: { color: colors.subtle, fontSize: 8 },
-  matchPill: { flexDirection: 'row', gap: 5, alignItems: 'center' },
-  matchPillText: { color: colors.green, fontSize: 9, fontWeight: '900' },
+  matchBadge: { flexDirection: 'row', gap: 5, alignItems: 'center', backgroundColor: colors.lime, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 5 },
+  matchBadgeText: { color: colors.forest, fontSize: 9, fontWeight: '900' },
   applicantCount: { color: colors.green, fontSize: 9, fontWeight: '900' },
   modalPage: { flex: 1, backgroundColor: colors.cream },
   modalHeader: { paddingHorizontal: 18, height: 66, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

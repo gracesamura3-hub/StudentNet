@@ -28,6 +28,20 @@ export function extractCvSkills(cvText = '', skillLibrary = DEFAULT_SKILL_LIBRAR
   });
 }
 
+const QUALIFICATION_LIBRARY = [
+  'bsc', 'bcom', 'ba', 'btech', 'diploma', 'honours', 'masters', 'phd', 'nqf',
+  'google cloud certification', 'aws certified', 'scrum master', 'prince2',
+];
+
+export async function extractSkillsAndQualifications(textInput = '') {
+  const text = normalizeSkillText(textInput);
+  if (!text) return [];
+
+  const skills = extractCvSkills(text, DEFAULT_SKILL_LIBRARY);
+  const qualifications = QUALIFICATION_LIBRARY.filter(item => text.includes(normalizeSkillText(item)));
+  return [...new Set([...skills, ...qualifications])].map(item => item.replace(/\b\w/g, letter => letter.toUpperCase()));
+}
+
 export function buildContextualNiaTip(profile = {}) {
   const skills = Array.isArray(profile.skills) ? profile.skills : [];
   const headline = String(profile.headline || '').trim();

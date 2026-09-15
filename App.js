@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
@@ -16,6 +16,7 @@ import OnboardingScreen from './src/screens/OnboardingScreen';
 import OpportunitiesScreen from './src/screens/OpportunitiesScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import AdminScreen from './src/screens/AdminScreen';
+import { InAppNotificationBanner } from './src/components/ui';
 import { colors } from './src/theme';
 
 enableScreens();
@@ -30,7 +31,7 @@ const icons = {
 };
 
 function MainTabs() {
-  const { user, isDemo } = useAuth();
+  const { user, isDemo, incomingNotification, dismissNotification } = useAuth();
   const isAdmin = Boolean(user?.role === 'admin' && !isDemo);
 
   return (
@@ -38,13 +39,20 @@ function MainTabs() {
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarHideOnKeyboard: true,
-        tabBarActiveTintColor: colors.green,
-        tabBarInactiveTintColor: colors.subtle,
+        tabBarActiveTintColor: colors.lime,
+        tabBarInactiveTintColor: colors.muted,
+        tabBarAllowFontScaling: false,
         tabBarLabelStyle: styles.tabLabel,
         tabBarStyle: styles.tabBar,
         tabBarItemStyle: styles.tabItem,
-        tabBarIcon: ({ focused, color }) => <Ionicons name={(icons[route.name] || ['stats-chart', 'stats-chart-outline'])[focused ? 0 : 1]} size={21} color={color} />,
+        tabBarIcon: ({ focused, color }) => (
+          <View style={styles.tabIconWrap}>
+            {focused ? <View style={styles.activeIndicator} /> : null}
+            <Ionicons name={(icons[route.name] || ['stats-chart', 'stats-chart-outline'])[focused ? 0 : 1]} size={21} color={color} />
+          </View>
+        ),
       })}
+      screenListeners={{ tabPress: () => { if (incomingNotification) dismissNotification(incomingNotification.id); } }}
     >
       <Tabs.Screen name="Home" component={HomeScreen} />
       <Tabs.Screen name="Network" component={NetworkScreen} />
@@ -58,16 +66,18 @@ function MainTabs() {
 }
 
 function AppContent() {
-  const { user, loading } = useAuth();
-  const [onboardedUsers, setOnboardedUsers] = useState(new Set());
+  const { user, loading, isDemo, completeOnboarding, incomingNotification, dismissNotification } = useAuth();
 
   if (loading) return <View style={styles.loading}><ActivityIndicator color={colors.green} size="large" /></View>;
   if (!user || !user.id) return <AuthScreen />;
-  if (!onboardedUsers.has(user.id)) return <OnboardingScreen user={user} onComplete={() => setOnboardedUsers(current => new Set([...current, user.id]))} />;
+  if (!user.onboarded && !isDemo) return <OnboardingScreen user={user} onComplete={completeOnboarding} />;
   return (
-    <NavigationContainer theme={{ ...DefaultTheme, colors: { ...DefaultTheme.colors, background: colors.cream } }}>
-      <View style={styles.appShell}><MainTabs /></View>
-    </NavigationContainer>
+    <>
+      <NavigationContainer theme={{ ...DefaultTheme, colors: { ...DefaultTheme.colors, background: colors.cream } }}>
+        <View style={styles.appShell}><MainTabs /></View>
+      </NavigationContainer>
+      <InAppNotificationBanner notification={incomingNotification} onDismiss={() => dismissNotification(incomingNotification?.id)} />
+    </>
   );
 }
 
@@ -83,6 +93,10 @@ export default function App() {
 const styles = StyleSheet.create({
   appShell: { flex: 1, width: '100%', maxWidth: Platform.OS === 'web' ? 520 : undefined, alignSelf: 'center', backgroundColor: colors.cream, overflow: 'hidden' },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.cream },
-  tabBar: { position: 'absolute', height: Platform.OS === 'ios' ? 86 : 70, paddingTop: 7, paddingBottom: Platform.OS === 'ios' ? 22 : 8, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: 'rgba(255,255,255,0.97)', elevation: 12, shadowColor: colors.ink, shadowOffset: { width: 0, height: -7 }, shadowOpacity: 0.06, shadowRadius: 15 },
-  tabItem: { paddingVertical: 3 }, tabLabel: { fontSize: 8, fontWeight: '800', marginTop: 3 }, tabBadge: { backgroundColor: colors.coral, color: colors.white, fontSize: 8, fontWeight: '900', minWidth: 16, height: 16, lineHeight: 16 },
+  tabBar: { position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 20, height: Platform.OS === 'web' ? 74 : Platform.OS === 'ios' ? 86 : 70, paddingTop: 7, paddingBottom: Platform.OS === 'ios' ? 22 : 8, borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: 'rgba(255,255,255,0.97)', elevation: 12, shadowColor: colors.ink, shadowOffset: { width: 0, height: -7 }, shadowOpacity: 0.06, shadowRadius: 15 },
+  tabItem: { flex: 1, minWidth: 0, paddingVertical: 3 },
+  tabIconWrap: { width: 34, height: 29, alignItems: 'center', justifyContent: 'flex-end', paddingTop: 6 },
+  activeIndicator: { position: 'absolute', top: 0, width: 17, height: 4, borderRadius: 999, backgroundColor: colors.lime },
+  tabLabel: { fontSize: 9, lineHeight: 11, fontWeight: '800', marginTop: 2, textAlign: 'center', includeFontPadding: false },
+  tabBadge: { backgroundColor: colors.coral, color: colors.white, fontSize: 8, fontWeight: '900', minWidth: 16, height: 16, lineHeight: 16 },
 });
