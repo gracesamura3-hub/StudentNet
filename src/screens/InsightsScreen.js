@@ -31,6 +31,11 @@ function buildStudentData(user, posts) {
       : 0;
   const postEngagement = posts.reduce((sum, post) => sum + safeNumber(post.reactions) + safeNumber(post.commentCount), 0);
   const videoPosts = posts.filter(post => post?.type === 'video' || post?.mediaType === 'video').length;
+  const chart = posts.reduce((values, post) => {
+    const day = post?.createdAt?.toDate?.()?.getDay?.();
+    if (Number.isInteger(day)) values[day === 0 ? 6 : day - 1] += 1;
+    return values;
+  }, [0, 0, 0, 0, 0, 0, 0]);
   return {
     headline: 'Your community engagement is growing',
     chartLabel: 'Profile + network activity · real-time',
@@ -44,6 +49,7 @@ function buildStudentData(user, posts) {
       { name: 'Network health', value: connectionCount ? Math.min(100, Math.round(connectionCount * 3)) : 0 },
       { name: 'Post engagement', value: postEngagement ? Math.min(100, Math.round(postEngagement / 5)) : 0 },
     ],
+    chart,
   };
 }
 
